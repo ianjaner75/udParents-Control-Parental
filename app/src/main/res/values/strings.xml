@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">udParents</string>
+    <string name="device_admin_description">Permite retirar el estado de administrador del dispositivo cuando se desvincula desde la cuenta parental.</string>
 </resources>

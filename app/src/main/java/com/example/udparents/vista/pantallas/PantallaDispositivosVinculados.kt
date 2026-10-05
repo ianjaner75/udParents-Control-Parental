@@ -11,18 +11,21 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.udparents.modelo.CodigoVinculacion
 import com.example.udparents.viewmodel.VistaModeloVinculacion
 import com.google.firebase.auth.FirebaseAuth
 
 @Composable
 fun PantallaDispositivosVinculados(
-    onVolverAlMenuPadre: () -> Unit // callback para regresar
+    onVolverAlMenuPadre: () -> Unit
 ) {
     val viewModel: VistaModeloVinculacion = viewModel()
     val dispositivos by viewModel.dispositivosVinculados.collectAsState()
+    val idPadre = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
 
-    val usuario = FirebaseAuth.getInstance().currentUser
-    val idPadre = usuario?.uid ?: ""
+    var dispositivoPendiente by remember { mutableStateOf<CodigoVinculacion?>(null) }
+    var enviandoOrden by remember { mutableStateOf(false) }
+    var mensajeOrden by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(idPadre) {
         if (idPadre.isNotEmpty()) {
@@ -45,8 +48,13 @@ fun PantallaDispositivosVinculados(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        Button(onClick = { onVolverAlMenuPadre() }) {
+        Button(onClick = onVolverAlMenuPadre) {
             Text("Volver al menú principal")
+        }
+
+        mensajeOrden?.let { mensaje ->
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(mensaje, color = MaterialTheme.colorScheme.primary)
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -58,8 +66,8 @@ fun PantallaDispositivosVinculados(
                 style = MaterialTheme.typography.bodyLarge
             )
         } else {
-            LazyColumn {
-                items(dispositivos) { dispositivo ->
+            LazyColumn(modifier = Modifier.weight(1f)) {
+                items(dispositivos, key = { it.codigo }) { dispositivo ->
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -68,14 +76,77 @@ fun PantallaDispositivosVinculados(
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Text("Código: ${dispositivo.codigo}", fontSize = 16.sp)
-                            Text("Dispositivo hijo (UID): ${dispositivo.dispositivoHijo}", fontSize = 14.sp, color = Color.DarkGray)
+                            Text(
+                                "Dispositivo hijo (UID): ${dispositivo.dispositivoHijo}",
+                                fontSize = 14.sp,
+                                color = Color.DarkGray
+                            )
                             Text("Nombre: ${dispositivo.nombreHijo}", fontSize = 14.sp)
                             Text("Edad: ${dispositivo.edadHijo}", fontSize = 14.sp)
                             Text("Sexo: ${dispositivo.sexoHijo}", fontSize = 14.sp)
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            if (dispositivo.desinstalacionSolicitada) {
+                                Text(
+                                    "Orden enviada. El dispositivo debe procesarla para permitir la desinstalación.",
+                                    color = MaterialTheme.colorScheme.primary,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            } else {
+                                OutlinedButton(
+                                    onClick = { dispositivoPendiente = dispositivo },
+                                    enabled = idPadre.isNotBlank() && !enviandoOrden
+                                ) {
+                                    Text("Autorizar desvinculación y desinstalación")
+                                }
+                            }
                         }
                     }
                 }
             }
         }
+    }
+
+    dispositivoPendiente?.let { dispositivo ->
+        AlertDialog(
+            onDismissRequest = {
+                if (!enviandoOrden) dispositivoPendiente = null
+            },
+            title = { Text("Autorizar desinstalación") },
+            text = {
+                Text(
+                    "Se enviará una orden a ${dispositivo.nombreHijo.ifBlank { "este dispositivo" }} " +
+                        "para retirar el vínculo y permitir que la aplicación se desinstale manualmente."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !enviandoOrden,
+                    onClick = {
+                        enviandoOrden = true
+                        viewModel.solicitarDesinstalacion(dispositivo.codigo, idPadre) { exito, error ->
+                            enviandoOrden = false
+                            if (exito) {
+                                mensajeOrden = "Orden de desvinculación enviada."
+                                dispositivoPendiente = null
+                            } else {
+                                mensajeOrden = error ?: "No se pudo enviar la orden."
+                            }
+                        }
+                    }
+                ) {
+                    Text(if (enviandoOrden) "Enviando…" else "Enviar orden")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !enviandoOrden,
+                    onClick = { dispositivoPendiente = null }
+                ) {
+                    Text("Cancelar")
+                }
+            }
+        )
     }
 }

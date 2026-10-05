@@ -38,7 +38,8 @@ class RepositorioVinculacion {
             .update(
                 mapOf(
                     "vinculado" to true,
-                    "dispositivoHijo" to idHijo
+                    "dispositivoHijo" to idHijo,
+                    "desinstalacionSolicitada" to false
                 )
             )
             .addOnSuccessListener { onResult(true) }
@@ -64,7 +65,8 @@ class RepositorioVinculacion {
             "dispositivoHijo" to codigoVinculacion.dispositivoHijo,
             "nombreHijo" to codigoVinculacion.nombreHijo,
             "edadHijo" to codigoVinculacion.edadHijo,
-            "sexoHijo" to codigoVinculacion.sexoHijo
+            "sexoHijo" to codigoVinculacion.sexoHijo,
+            "desinstalacionSolicitada" to false
         )
 
         db.collection("codigos_vinculacion")
@@ -73,6 +75,25 @@ class RepositorioVinculacion {
             .addOnSuccessListener { onResult(true) }
             .addOnFailureListener { onResult(false) }
     }
+    /**
+     * Solicita al dispositivo hijo que retire el vínculo y permita la desinstalación.
+     * La comprobación de propiedad es defensiva en el cliente; las reglas de Firestore
+     * también deben restringir esta escritura al idPadre autenticado.
+     */
+    suspend fun solicitarDesinstalacion(codigo: String, idPadre: String): Boolean {
+        val referencia = db.collection("codigos_vinculacion").document(codigo)
+        val documento = referencia.get().await()
+        if (!documento.exists() ||
+            documento.getString("idPadre") != idPadre ||
+            documento.getBoolean("vinculado") != true
+        ) {
+            return false
+        }
+
+        referencia.update("desinstalacionSolicitada", true).await()
+        return true
+    }
+
     suspend fun dispositivoYaVinculado(idDispositivo: String): Boolean {
         val snapshot = db.collection("codigos_vinculacion")
             .whereEqualTo("dispositivoHijo", idDispositivo)

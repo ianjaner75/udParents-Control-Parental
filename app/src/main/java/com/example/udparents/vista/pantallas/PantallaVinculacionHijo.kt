@@ -7,6 +7,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.Process
 import android.provider.Settings
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
@@ -21,6 +22,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.udparents.viewmodel.VistaModeloVinculacion
+import com.example.udparents.servicio.MonitorDesvinculacion
+import com.example.udparents.utilidades.SesionHijoStore
+import com.example.udparents.utilidades.VisibilidadLauncher
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.delay
 import com.example.udparents.servicio.RegistroUsoService
@@ -42,6 +46,12 @@ fun PantallaVinculacionHijo(
     var mostrarDialogoPermiso by remember { mutableStateOf(false) }
     var mostrarDialogoExito by remember { mutableStateOf(false) }
     var vinculacionCompleta by remember { mutableStateOf(false) }
+    var sesionHijoActiva by remember(context) {
+        mutableStateOf(SesionHijoStore.obtener(context) != null)
+    }
+
+    // Una vez vinculado, salir al fondo en vez de volver al selector de roles.
+    BackHandler(enabled = sesionHijoActiva) { activity?.finish() }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(Unit) {
@@ -87,7 +97,7 @@ fun PantallaVinculacionHijo(
     // Diálogo para pedir permiso
     if (mostrarDialogoPermiso && !permisoOtorgado.value) {
         AlertDialog(
-            onDismissRequest = {},
+            onDismissRequest = { activity?.finish() },
             title = { Text("Permiso requerido") },
             text = { Text("Debes conceder acceso al uso de aplicaciones para poder registrar la actividad.") },
             confirmButton = {
@@ -103,7 +113,7 @@ fun PantallaVinculacionHijo(
     // Diálogo de éxito
     if (mostrarDialogoExito && permisoOtorgado.value) {
         AlertDialog(
-            onDismissRequest = {},
+            onDismissRequest = { activity?.finish() },
             title = { Text("Vinculación exitosa") },
             text = { Text("El dispositivo ha sido vinculado correctamente.") },
             confirmButton = {
@@ -182,6 +192,19 @@ fun PantallaVinculacionHijo(
                 vistaModelo.vincularHijoConDatos(
                     context = context,
                     onExito = {
+                        val codigo = codigoVinculacion?.codigo.orEmpty()
+                        val uid = codigoVinculacion?.dispositivoHijo
+                            ?.takeIf { it.isNotBlank() }
+                            ?: uidHijo.orEmpty()
+
+                        if (!SesionHijoStore.guardar(context, codigo, uid)) {
+                            mensajeError = "No se pudo guardar la sesión del dispositivo. Inténtalo de nuevo."
+                            return@vincularHijoConDatos
+                        }
+
+                        sesionHijoActiva = true
+                        VisibilidadLauncher.ocultar(context)
+                        MonitorDesvinculacion.iniciar(context)
                         mensajeError = ""
                         vinculacionCompleta = true
                         if (!permisoOtorgado.value) {
@@ -206,10 +229,11 @@ fun PantallaVinculacionHijo(
             Text("Vincular")
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
-
-        TextButton(onClick = { onVolverAlPadre() }) {
-            Text("Volver al menú principal")
+        if (!sesionHijoActiva) {
+            Spacer(modifier = Modifier.height(12.dp))
+            TextButton(onClick = { onVolverAlPadre() }) {
+                Text("Volver al menú principal")
+            }
         }
 
         if (mensajeError.isNotEmpty()) {

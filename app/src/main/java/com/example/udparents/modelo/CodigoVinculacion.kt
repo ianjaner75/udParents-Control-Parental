@@ -8,5 +8,6 @@ data class CodigoVinculacion(
     val dispositivoHijo: String = "",
     val nombreHijo: String = "",
     val edadHijo: Int = 0,
-    val sexoHijo: String = ""
+    val sexoHijo: String = "",
+    val desinstalacionSolicitada: Boolean = false
 )
