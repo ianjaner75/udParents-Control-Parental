@@ -34,12 +34,24 @@
             android:name=".main.MainActivity"
             android:exported="true"
             android:label="@string/app_name"
-            android:theme="@style/Theme.UdParents">
+            android:theme="@style/Theme.UdParents" />
+
+        <!-- 🕶️ Stealth Mode: el ícono del Launcher se gestiona a través de este
+             activity-alias para poder habilitarlo/deshabilitarlo en caliente con
+             PackageManager.setComponentEnabledSetting sin las restricciones de
+             caché de algunos Launchers (p. ej. Samsung One UI). -->
+        <activity-alias
+            android:name=".main.MainActivityAlias"
+            android:targetActivity=".main.MainActivity"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher_round"
+            android:label="@string/app_name">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
+        </activity-alias>
 
         <service
             android:name=".servicio.MiFirebaseMessagingService"

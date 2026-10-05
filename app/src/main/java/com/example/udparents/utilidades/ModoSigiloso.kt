@@ -17,8 +17,11 @@ object ModoSigiloso {
 
     private const val TAG = "ModoSigiloso"
 
-    /** Componente con el intent-filter MAIN/LAUNCHER declarado en el AndroidManifest. */
-    private const val COMPONENTE_LAUNCHER = "com.example.udparents.main.MainActivity"
+    /** Componente con el intent-filter MAIN/LAUNCHER declarado en el AndroidManifest.
+     *  Se usa el activity-alias (y no la MainActivity base) para que el ícono se
+     *  pueda ocultar/restaurar en caliente incluso en Launchers con caché agresiva
+     *  (p. ej. Samsung One UI). */
+    private const val COMPONENTE_LAUNCHER = "com.example.udparents.main.MainActivityAlias"
 
     /**
      * Oculta el ícono de la app del Launcher.
