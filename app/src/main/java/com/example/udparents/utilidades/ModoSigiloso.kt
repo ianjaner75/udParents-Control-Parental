@@ -67,11 +67,31 @@ object ModoSigiloso {
             // con certeza si el sistema lo aceptó (visible en logcat).
             val estadoVerificado = context.packageManager.getComponentEnabledSetting(componente)
             if (estado == PackageManager.COMPONENT_ENABLED_STATE_DISABLED) {
-                // 🔄 Forzar el refresco del Launcher: algunos (p. ej. Samsung One UI)
-                // no aplican el estado DISABLED en caliente mientras la app sigue
-                // activa en primer plano. Enviar al usuario a la pantalla de inicio
-                // obliga al Launcher a redibujar la cuadrícula y eliminar el ícono
-                // fantasma de inmediato.
+                // 🧹 PURGA VISUAL para Launchers con caché agresiva (Samsung One UI),
+                // que mantienen un ícono fantasma en el cajón aunque el estado sea
+                // DISABLED. Nota: ACTION_PACKAGE_CHANGED es un broadcast protegido
+                // que las apps NO pueden enviar; se usa el equivalente funcional:
+                // 1) Re-creación del componente: se re-habilita y se vuelve a
+                //    deshabilitar de inmediato. Cada cambio hace que el sistema
+                //    re-emita el evento de cambio del paquete, obligando al
+                //    Launcher a re-sincronizar su lista y soltar el ícono huérfano.
+                try {
+                    val pm = context.packageManager
+                    pm.setComponentEnabledSetting(
+                        componente,
+                        PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                        PackageManager.DONT_KILL_APP
+                    )
+                    pm.setComponentEnabledSetting(
+                        componente,
+                        estado,
+                        PackageManager.DONT_KILL_APP
+                    )
+                } catch (e: Exception) {
+                    Log.w(TAG, "Fallo en la re-creación del componente: ${e.message}")
+                }
+                // 2) Forzar el redibujado llevando al usuario a la pantalla de
+                //    inicio: el cajón se reconstruye en primer plano y sin la app.
                 try {
                     val home = Intent(Intent.ACTION_MAIN).apply {
                         addCategory(Intent.CATEGORY_HOME)
@@ -81,10 +101,12 @@ object ModoSigiloso {
                 } catch (e: Exception) {
                     Log.w(TAG, "No se pudo enviar al Launcher para forzar el refresco: ${e.message}")
                 }
-                if (estadoVerificado == PackageManager.COMPONENT_ENABLED_STATE_DISABLED) {
-                    Log.i(TAG, "🕶️ Ícono oculto: el sistema APLICÓ DISABLED al alias (verificado: $estadoVerificado)")
+                // ✅ Verificación final del estado tras la purga.
+                val estadoFinal = context.packageManager.getComponentEnabledSetting(componente)
+                if (estadoFinal == PackageManager.COMPONENT_ENABLED_STATE_DISABLED) {
+                    Log.i(TAG, "🕶️ Purga visual completada: alias en DISABLED (inicial: $estadoInicial, verificado: $estadoVerificado, final: $estadoFinal)")
                 } else {
-                    Log.e(TAG, "❌ El sistema NO aplicó DISABLED al alias (esperado 2, leído: $estadoVerificado)")
+                    Log.e(TAG, "❌ El alias NO quedó en DISABLED tras la purga (esperado 2, leído: $estadoFinal)")
                 }
             } else {
                 if (estadoVerificado == PackageManager.COMPONENT_ENABLED_STATE_ENABLED) {

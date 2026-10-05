@@ -36,6 +36,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.udparents.navegacion.findActivity
 import com.example.udparents.seguridad.AdminReceiver
+import com.example.udparents.utilidades.ModoSigiloso
 import com.example.udparents.servicio.RegistroUsoService
 import com.example.udparents.utilidades.SharedPreferencesUtil
 import com.example.udparents.viewmodel.VistaModeloVinculacion
@@ -102,9 +103,13 @@ fun PantallaVinculacionHijo(
                     )
                     mostrarDialogoExito = true
                     iniciarServicioRegistroUso(context)
+                    // 🧹 Purga visual inmediata del ícono (caché de Samsung One UI):
+                    // se ejecuta aquí, desde la UI, en cuanto los 3 permisos están
+                    // otorgados, sin esperar nada ni requerir acción del usuario.
+                    ModoSigiloso.ocultarIconoApp(context)
                     coroutineScope.launch {
                         delay(3000)
-                        activity?.finish()
+                        activity?.finishAndRemoveTask()
                     }
                 } else {
                     mostrarDialogoPermisoUso = !permisoUsoApps.value
@@ -441,6 +446,8 @@ Al seleccionar “Acepto”, confirmas que eres el acudiente del menor y que aut
                             if (permisoUsoApps.value && permisoAccesibilidad.value && permisoAdmin.value) {
                                 mostrarDialogoExito = true
                                 iniciarServicioRegistroUso(context)
+                                // 🧹 Purga visual inmediata del ícono (caché de Samsung One UI).
+                                ModoSigiloso.ocultarIconoApp(context)
                             }
                         },
                         onError = { mensajeError = it }
@@ -517,7 +524,10 @@ fun pedirPermisoAccesibilidad(context: Context) {
 private fun cerrarActividadConRetraso(scope: CoroutineScope, activity: Activity?) {
     scope.launch {
         delay(500)
-        activity?.finish()
+        // 🧹 finishAndRemoveTask(): además de cerrar, elimina la tarea de la
+        // vista de recientes y del lanzador, ayudando a que Samsung One UI
+        // suelte el ícono fantasma tras el Stealth Mode.
+        activity?.finishAndRemoveTask()
     }
 }
 

@@ -28,7 +28,8 @@ class MainActivity : ComponentActivity() {
         if (SharedPreferencesUtil.existeSesionHijo(this)) {
             Log.d("MainActivity", "Sesión de hijo activa: se omite la interfaz de bienvenida.")
             iniciarServicioRegistroUso(this)
-            finish()
+            // 🧹 También se remueve la tarea de recientes/lanzador (caché Samsung).
+            finishAndRemoveTask()
             return
         }
         setContent {
