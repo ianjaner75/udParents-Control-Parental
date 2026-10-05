@@ -125,9 +125,13 @@ class RegistroUsoService : Service() {
         // fue exitosa se entra en Stealth Mode (ocultar el ícono), evitando así
         // el crash ForegroundServiceStartNotAllowedException en Android 12+.
         val foregroundActivo = mostrarNotificacion()
-        // 🔒 Asegurar que el admin de dispositivo esté activo (impide desinstalación)
+        // 🔒 El Administrador de Dispositivos SOLO se solicita desde la UI (botón
+        // del diálogo de Administrador en PantallaVinculacionHijo). Lanzarlo desde
+        // aquí es bloqueado por Android 14 (Background Activity Launch). El servicio
+        // asume que, si arrancó, los permisos ya se pidieron en la UI; solo se deja
+        // constancia del estado.
         if (!isDeviceAdminActive(applicationContext)) {
-            solicitarActivacionDeviceAdmin(applicationContext)
+            Log.w("RegistroUsoService", "⚠️ Administrador de dispositivo inactivo: se solicitará desde la UI cuando el usuario interactúe.")
         }
         // 🕶️ Stealth Mode: si el hijo ya está vinculado, persistir su sesión local.
         persistirSesionHijoLocal()
@@ -773,25 +777,14 @@ class RegistroUsoService : Service() {
         }
     }
 
+    //  Helpers Device Admin: comprobación de estado.
+    //  🛡️ La SOLICITUD de activación se hace exclusivamente desde la UI
+    //  (PantallaVinculacionHijo), nunca desde el servicio: Android 14 bloquea
+    //  los lanzamientos de actividad en segundo plano (Background Activity Launch).
+
     private fun isDeviceAdminActive(context: Context): Boolean {
         val dpm = context.getSystemService(DevicePolicyManager::class.java)
         val cn = ComponentName(context, AdminReceiver::class.java)
         return dpm?.isAdminActive(cn) == true
-    }
-
-    private fun solicitarActivacionDeviceAdmin(context: Context) {
-        val dpm = context.getSystemService(DevicePolicyManager::class.java)
-        val cn = ComponentName(context, AdminReceiver::class.java)
-        if (dpm?.isAdminActive(cn) != true) {
-            val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
-                putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, cn)
-                putExtra(
-                    DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                    "UdParents necesita este permiso para impedir que se desinstale sin autorización."
-                )
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            context.startActivity(intent) // abre la pantalla de activación
-        }
     }
 }

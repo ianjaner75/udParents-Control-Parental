@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.example.udparents.navegacion.findActivity
 import com.example.udparents.seguridad.AdminReceiver
 import com.example.udparents.servicio.RegistroUsoService
 import com.example.udparents.utilidades.SharedPreferencesUtil
@@ -534,6 +535,16 @@ fun isDeviceAdminActive(context: Context): Boolean {
     return dpm?.isAdminActive(cn) == true
 }
 
+/**
+ * 🔒 Solicita la activación del Administrador de Dispositivos.
+ *
+ * 🛡️ DEBE ejecutarse únicamente desde la UI (botón del diálogo de Administrador
+ * en esta pantalla), con la actividad en PRIMER PLANO y el usuario interactuando.
+ * Nunca debe lanzarse desde un servicio: Android 14 bloquea los lanzamientos de
+ * actividad en segundo plano (Background Activity Launch) para
+ * ACTION_ADD_DEVICE_ADMIN. [startIntentSafely] resuelve y utiliza la Actividad
+ * actual para el lanzamiento.
+ */
 fun solicitarActivacionDeviceAdmin(context: Context) {
     val dpm = context.getSystemService(DevicePolicyManager::class.java)
     val cn = ComponentName(context, AdminReceiver::class.java)
@@ -577,8 +588,15 @@ private fun startIntentSafely(context: Context, intent: Intent): Boolean {
     val pm = context.packageManager
     val canHandle = intent.resolveActivity(pm) != null
     if (!canHandle) return false
+    // 🛡️ Android 14 bloquea los lanzamientos de actividad desde contextos que
+    // no están en primer plano (Background Activity Launch). Se prioriza SIEMPRE
+    // la Actividad actual y visible (activity.startActivity) para lanzar el intent,
+    // incluyendo el de ACTION_ADD_DEVICE_ADMIN.
+    val actividad = context.findActivity()
     return try {
-        if (context is Activity) {
+        if (actividad != null) {
+            actividad.startActivity(intent)
+        } else if (context is Activity) {
             context.startActivity(intent)
         } else {
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
