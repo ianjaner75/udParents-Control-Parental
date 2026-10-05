@@ -68,7 +68,11 @@ class RepositorioVinculacion {
             .get()
             .await()
 
-        return snapshot.documents.mapNotNull { it.toObject(CodigoVinculacion::class.java) }
+        return snapshot.documents
+            .mapNotNull { it.toObject(CodigoVinculacion::class.java) }
+            // 🚩 Excluir vinculaciones cuya desvinculación ya fue autorizada
+            // (el dispositivo del hijo aún está procesando la orden remota).
+            .filter { !it.desvincular }
     }
 
     fun vincularConDatos(
@@ -123,7 +127,13 @@ class RepositorioVinculacion {
     }
 
     /**
-     * Elimina una vinculación de la base de datos de Firestore.
+     * Autoriza la desvinculación remota de un hijo.
+     *
+     * 🚩 Ya NO elimina el documento de inmediato: activa la bandera `desvincular`
+     * en Firestore para que el dispositivo del hijo la detecte en tiempo real,
+     * restaure su ícono, limpie su sesión local, remueva su privilegio de
+     * Administrador de Dispositivos y, finalmente, elimine el documento.
+     *
      * @param uidPadre El UID del padre.
      * @param uidHijo El UID del hijo a desvincular.
      * @param onResult Callback que indica si la operación fue exitosa o no.
@@ -133,7 +143,7 @@ class RepositorioVinculacion {
         uidHijo: String,
         onResult: (Boolean) -> Unit
     ) {
-        // En este caso, buscaremos el documento por el uidHijo para eliminarlo.
+        // En este caso, buscaremos el documento por el uidHijo para marcarlo.
         coleccionCodigos
             .whereEqualTo("idPadre", uidPadre)
             .whereEqualTo("dispositivoHijo", uidHijo)
@@ -141,11 +151,16 @@ class RepositorioVinculacion {
             .addOnSuccessListener { querySnapshot ->
                 if (!querySnapshot.isEmpty) {
                     val document = querySnapshot.documents[0] // Asumimos una única vinculación por hijo
-                    document.reference.delete()
+                    document.reference.update(
+                        mapOf(
+                            "desvincular" to true,
+                            "timestampDesvinculacion" to System.currentTimeMillis()
+                        )
+                    )
                         .addOnSuccessListener { onResult(true) }
                         .addOnFailureListener { onResult(false) }
                 } else {
-                    onResult(false) // No se encontró el documento para eliminar
+                    onResult(false) // No se encontró el documento para desvincular
                 }
             }
             .addOnFailureListener { onResult(false) }

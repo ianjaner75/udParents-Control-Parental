@@ -11,5 +11,7 @@ data class CodigoVinculacion(
     val sexoHijo: String = "",
     val termsAccepted: Boolean = false,
     val termsVersion: String = "1.0",
-    val termsAcceptedAt: Long? = null
+    val termsAcceptedAt: Long? = null,
+    // 🚩 Bandera que activa el padre para autorizar la desvinculación remota.
+    val desvincular: Boolean = false
 )

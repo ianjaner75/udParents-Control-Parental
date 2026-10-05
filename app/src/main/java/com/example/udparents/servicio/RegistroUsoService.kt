@@ -12,6 +12,8 @@ import com.example.udparents.R
 import com.example.udparents.modelo.BloqueoRegistro
 import com.example.udparents.repositorio.RepositorioApps
 import com.example.udparents.repositorio.RepositorioBloqueos
+import com.example.udparents.utilidades.DesvinculacionRemota
+import com.example.udparents.utilidades.ModoSigiloso
 import com.example.udparents.utilidades.RegistroUsoApps
 import com.example.udparents.utilidades.SharedPreferencesUtil
 import com.example.udparents.vista.pantallas.PantallaBloqueoComposeActivity
@@ -124,6 +126,11 @@ class RegistroUsoService : Service() {
         if (!isDeviceAdminActive(applicationContext)) {
             solicitarActivacionDeviceAdmin(applicationContext)
         }
+        // 🕶️ Stealth Mode: si el hijo ya está vinculado, persistir su sesión local
+        // y ocultar el ícono de la app en el Launcher.
+        persistirSesionYActivarModoSigiloso()
+        // 📡 Escuchar en tiempo real la desvinculación remota autorizada por el padre.
+        DesvinculacionRemota.iniciarEscucha(applicationContext)
 
         tareaMonitoreo = scope.launch {
             while (isActive) {
@@ -411,6 +418,8 @@ class RegistroUsoService : Service() {
         super.onDestroy()
         Log.w("RegistroUsoService", "🛑 Servicio detenido inesperadamente")
         try { unregisterReceiver(screenReceiver) } catch (_: Exception) {}
+        // 📡 Detener la escucha de desvinculación remota junto con el servicio.
+        DesvinculacionRemota.detenerEscucha()
         scope.cancel()
         tareaMonitoreo?.cancel()
         tareaRegistroUso?.cancel()
@@ -715,6 +724,30 @@ class RegistroUsoService : Service() {
         }
     }
     //  Helpers Device Admin: comprobar y solicitar activación
+
+    /**
+     * 🕶️ Si el dispositivo ya fue vinculado (hay UID del padre guardado),
+     * persiste la sesión del hijo en SharedPreferences y oculta el ícono de
+     * la app del Launcher. Solo se ejecuta en dispositivos de hijo vinculados;
+     * en cualquier otro caso no hace nada.
+     */
+    private fun persistirSesionYActivarModoSigiloso() {
+        try {
+            val uidPadre = SharedPreferencesUtil.obtenerUidPadre(applicationContext)
+            val uidHijo = FirebaseAuth.getInstance().currentUser?.uid
+            if (uidPadre.isNullOrBlank() || uidHijo.isNullOrBlank()) {
+                Log.d("RegistroUsoService", "Sin vinculación activa; no se aplica el modo sigiloso.")
+                return
+            }
+            if (!SharedPreferencesUtil.existeSesionHijo(applicationContext)) {
+                SharedPreferencesUtil.guardarSesionHijo(applicationContext, uidHijo)
+                Log.i("RegistroUsoService", "🕶️ Sesión del hijo guardada localmente")
+            }
+            ModoSigiloso.ocultarIconoApp(applicationContext)
+        } catch (e: Exception) {
+            Log.e("RegistroUsoService", "Error aplicando el modo sigiloso: ${e.message}", e)
+        }
+    }
 
     private fun isDeviceAdminActive(context: Context): Boolean {
         val dpm = context.getSystemService(DevicePolicyManager::class.java)
