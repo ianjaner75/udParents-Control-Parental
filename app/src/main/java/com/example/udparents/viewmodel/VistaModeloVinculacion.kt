@@ -237,6 +237,35 @@ class VistaModeloVinculacion(
             }
         }
     }
+
+    /**
+     * 🚩 Autoriza la desvinculación remota de un hijo vinculado.
+     *
+     * Activa la bandera `desvincular` en Firestore. El dispositivo del hijo la
+     * detecta en tiempo real a través de su servicio, restaura el ícono de la
+     * app, limpia su sesión local y remueve el Administrador de Dispositivos.
+     *
+     * @param uidPadre El UID del padre.
+     * @param uidHijo El UID del hijo cuya desvinculación se autoriza.
+     */
+    fun autorizarDesvinculacion(uidPadre: String, uidHijo: String) {
+        viewModelScope.launch {
+            try {
+                repositorio.autorizarDesvinculacion(uidPadre, uidHijo) { exito ->
+                    if (exito) {
+                        // Quitar de la lista localmente para reflejar el cambio en la UI.
+                        _dispositivosVinculados.value =
+                            _dispositivosVinculados.value.filter { it.dispositivoHijo != uidHijo }
+                        Log.d("VistaModeloVinculacion", "Desvinculación autorizada para el hijo con UID: $uidHijo")
+                    } else {
+                        Log.e("VistaModeloVinculacion", "Error al autorizar la desvinculación")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("VistaModeloVinculacion", "Error al autorizar desvinculación: ${e.message}", e)
+            }
+        }
+    }
      fun validarNombreHijo(nombre: String): Boolean {
         val n = normalizarNombreEntrada(nombre)
 

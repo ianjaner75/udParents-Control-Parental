@@ -130,6 +130,12 @@ fun PantallaVinculacionHijo(
         }
     }
 
+    // 🔄 Diálogos de permisos evaluados de forma ESTRICTAMENTE SECUENCIAL:
+    // 1) Permiso de uso de apps → 2) Accesibilidad → 3) Administrador de dispositivo.
+    // Solo se muestra el PRIMER permiso pendiente; los permisos ya otorgados se
+    // saltan automáticamente gracias a la condición !permisoX.value. El diálogo
+    // de éxito (y el Stealth Mode vía servicio) solo se activa cuando los 3
+    // permisos están otorgados.
     if (mostrarDialogoPermisoUso && !permisoUsoApps.value) {
         AlertDialog(
             onDismissRequest = {},
@@ -151,9 +157,7 @@ fun PantallaVinculacionHijo(
                 }) { Text("Abrir ajustes") }
             }
         )
-    }
-
-    if (mostrarDialogoAccesibilidad && !permisoAccesibilidad.value) {
+    } else if (mostrarDialogoAccesibilidad && !permisoAccesibilidad.value) {
         AlertDialog(
             onDismissRequest = {},
             title = {
@@ -174,9 +178,7 @@ fun PantallaVinculacionHijo(
                 }
             }
         )
-    }
-
-    if (mostrarDialogoAdmin && !permisoAdmin.value) {
+    } else if (mostrarDialogoAdmin && !permisoAdmin.value) {
         AlertDialog(
             onDismissRequest = {},
             title = {

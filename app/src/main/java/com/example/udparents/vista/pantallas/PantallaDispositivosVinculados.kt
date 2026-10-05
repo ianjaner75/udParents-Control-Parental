@@ -10,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -45,6 +46,9 @@ fun PantallaDispositivosVinculados(
     var mostrarDialogoEliminacion by remember { mutableStateOf(false) }
     var dispositivoAEditar by remember { mutableStateOf<CodigoVinculacion?>(null) }
     var dispositivoAEliminar by remember { mutableStateOf<CodigoVinculacion?>(null) }
+    // 🚩 Estados para el diálogo de autorización de desvinculación remota
+    var mostrarDialogoDesvinculacion by remember { mutableStateOf(false) }
+    var dispositivoADesvincular by remember { mutableStateOf<CodigoVinculacion?>(null) }
 
     LaunchedEffect(idPadre) {
         if (idPadre.isNotEmpty()) {
@@ -107,6 +111,10 @@ fun PantallaDispositivosVinculados(
                                 dispositivoAEliminar = it
                                 mostrarDialogoEliminacion = true
                             },
+                            onUnlinkClick = {
+                                dispositivoADesvincular = it
+                                mostrarDialogoDesvinculacion = true
+                            },
                             surfaceColor = surfaceColor,
                             onSurfaceColor = onSurfaceColor,
                             accentColor = accentColor,
@@ -155,6 +163,20 @@ fun PantallaDispositivosVinculados(
             errorColor = MaterialTheme.colorScheme.error
         )
     }
+
+    // 🚩 Diálogo de confirmación de autorización de desvinculación remota
+    if (mostrarDialogoDesvinculacion && dispositivoADesvincular != null) {
+        ConfirmUnlinkDialog(
+            dispositivo = dispositivoADesvincular!!,
+            onDismiss = { mostrarDialogoDesvinculacion = false },
+            onConfirm = {
+                viewModel.autorizarDesvinculacion(idPadre, it.dispositivoHijo)
+                mostrarDialogoDesvinculacion = false
+            },
+            primaryLight = primaryLight,
+            accentColor = accentColor
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -163,6 +185,7 @@ fun DispositivoVinculadoCard(
     dispositivo: CodigoVinculacion,
     onEditClick: (CodigoVinculacion) -> Unit,
     onDeleteClick: (CodigoVinculacion) -> Unit,
+    onUnlinkClick: (CodigoVinculacion) -> Unit,
     surfaceColor: Color,
     onSurfaceColor: Color,
     accentColor: Color,
@@ -174,10 +197,13 @@ fun DispositivoVinculadoCard(
         shape = RoundedCornerShape(16.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(16.dp)
+        ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
@@ -237,6 +263,30 @@ fun DispositivoVinculadoCard(
                     )
                 }
             }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // 🔓 Acción explícita y visible para autorizar la desvinculación remota
+        // del dispositivo del hijo (bandera 'desvincular' en Firestore).
+        Button(
+            onClick = { onUnlinkClick(dispositivo) },
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = accentColor)
+        ) {
+            Icon(
+                imageVector = Icons.Default.LockOpen,
+                contentDescription = "Autorizar desvinculación",
+                tint = Color(0xFF1A237E),
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                "Autorizar desvinculación",
+                color = Color(0xFF1A237E),
+                fontWeight = FontWeight.Bold
+            )
+        }
         }
     }
 }
@@ -370,6 +420,37 @@ fun AddEditHijoDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancelar", color = accentColor) }
+        }
+    )
+}
+
+// 🚩 Nuevo composable para el diálogo de confirmación de autorización de desvinculación remota
+@Composable
+fun ConfirmUnlinkDialog(
+    dispositivo: CodigoVinculacion,
+    onDismiss: () -> Unit,
+    onConfirm: (CodigoVinculacion) -> Unit,
+    primaryLight: Color,
+    accentColor: Color
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Autorizar desvinculación") },
+        text = {
+            Text(
+                "¿Autorizas la desvinculación remota del dispositivo de ${dispositivo.nombreHijo}? " +
+                "El dispositivo restaurará el ícono de la app, limpiará su sesión local y quitará " +
+                "el permiso de Administrador de Dispositivos, permitiendo que la app pueda desinstalarse."
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(dispositivo) },
+                colors = ButtonDefaults.buttonColors(containerColor = accentColor)
+            ) { Text("Autorizar desvinculación", color = Color(0xFF1A237E)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancelar", color = primaryLight) }
         }
     )
 }

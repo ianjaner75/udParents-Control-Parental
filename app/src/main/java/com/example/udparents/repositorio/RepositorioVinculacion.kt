@@ -127,13 +127,10 @@ class RepositorioVinculacion {
     }
 
     /**
-     * Autoriza la desvinculación remota de un hijo.
-     *
-     * 🚩 Ya NO elimina el documento de inmediato: activa la bandera `desvincular`
-     * en Firestore para que el dispositivo del hijo la detecte en tiempo real,
-     * restaure su ícono, limpie su sesión local, remueva su privilegio de
-     * Administrador de Dispositivos y, finalmente, elimine el documento.
-     *
+     * Elimina una vinculación de la base de datos de Firestore (borrado físico).
+     * Útil cuando el dispositivo del hijo ya no está enlazado (p. ej. se
+     * desinstaló la app o se formateó) y solo se quiere limpiar el registro.
+     * Para una desvinculación remota en caliente, usar [autorizarDesvinculacion].
      * @param uidPadre El UID del padre.
      * @param uidHijo El UID del hijo a desvincular.
      * @param onResult Callback que indica si la operación fue exitosa o no.
@@ -143,7 +140,41 @@ class RepositorioVinculacion {
         uidHijo: String,
         onResult: (Boolean) -> Unit
     ) {
-        // En este caso, buscaremos el documento por el uidHijo para marcarlo.
+        // En este caso, buscaremos el documento por el uidHijo para eliminarlo.
+        coleccionCodigos
+            .whereEqualTo("idPadre", uidPadre)
+            .whereEqualTo("dispositivoHijo", uidHijo)
+            .get()
+            .addOnSuccessListener { querySnapshot ->
+                if (!querySnapshot.isEmpty) {
+                    val document = querySnapshot.documents[0] // Asumimos una única vinculación por hijo
+                    document.reference.delete()
+                        .addOnSuccessListener { onResult(true) }
+                        .addOnFailureListener { onResult(false) }
+                } else {
+                    onResult(false) // No se encontró el documento para eliminar
+                }
+            }
+            .addOnFailureListener { onResult(false) }
+    }
+
+    /**
+     * 🚩 Autoriza la desvinculación remota de un hijo vinculado.
+     *
+     * Activa la bandera `desvincular` en Firestore para que el dispositivo del
+     * hijo la detecte en tiempo real, restaure su ícono, limpie su sesión local,
+     * remueva su privilegio de Administrador de Dispositivos y, finalmente,
+     * elimine el documento de vinculación.
+     *
+     * @param uidPadre El UID del padre.
+     * @param uidHijo El UID del hijo cuya desvinculación se autoriza.
+     * @param onResult Callback que indica si la operación fue exitosa o no.
+     */
+    fun autorizarDesvinculacion(
+        uidPadre: String,
+        uidHijo: String,
+        onResult: (Boolean) -> Unit
+    ) {
         coleccionCodigos
             .whereEqualTo("idPadre", uidPadre)
             .whereEqualTo("dispositivoHijo", uidHijo)
