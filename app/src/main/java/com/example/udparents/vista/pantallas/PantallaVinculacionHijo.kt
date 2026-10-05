@@ -40,6 +40,7 @@ import com.example.udparents.servicio.RegistroUsoService
 import com.example.udparents.utilidades.SharedPreferencesUtil
 import com.example.udparents.viewmodel.VistaModeloVinculacion
 import com.google.firebase.auth.FirebaseAuth
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -206,11 +207,11 @@ fun PantallaVinculacionHijo(
 
     if (mostrarDialogoExito) {
         AlertDialog(
-            onDismissRequest = { activity?.finish() },
+            onDismissRequest = { cerrarActividadConRetraso(coroutineScope, activity) },
             title = { Text("Vinculación exitosa") },
             text = { Text("El dispositivo fue vinculado correctamente. Cerrando aplicación...") },
             confirmButton = {
-                TextButton(onClick = { activity?.finish() }) {
+                TextButton(onClick = { cerrarActividadConRetraso(coroutineScope, activity) }) {
                     Text("Cerrar")
                 }
             }
@@ -503,6 +504,21 @@ fun pedirPermisoAccesibilidad(context: Context) {
     val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     context.startActivity(intent)
+}
+
+/**
+ * 🕶️ Cierra la actividad con un pequeño retraso (500 ms) después de que el
+ * usuario aceptó el Administrador de Dispositivos y se guardaron las
+ * preferencias de sesión. La pausa da tiempo a que el estado
+ * COMPONENT_ENABLED_STATE_DISABLED del alias se propague a nivel de sistema y
+ * el Launcher (p. ej. Samsung One UI) elimine el ícono fantasma antes de que
+ * la app salga del primer plano.
+ */
+private fun cerrarActividadConRetraso(scope: CoroutineScope, activity: Activity?) {
+    scope.launch {
+        delay(500)
+        activity?.finish()
+    }
 }
 
 fun iniciarServicioRegistroUso(context: Context) {
