@@ -78,7 +78,10 @@ object ModoSigiloso {
                 } catch (e: Exception) {
                     Log.w(TAG, "No se pudo enviar al Launcher para forzar el refresco: ${e.message}")
                 }
-                Log.i(TAG, "🕶️ Ícono de la app oculto del Launcher")
+                // ✅ Verificación: leer el estado recién aplicado para confirmar en
+                // logcat que el sistema aceptó el DISABLED (2 = DISABLED).
+                val estadoVerificado = context.packageManager.getComponentEnabledSetting(componente)
+                Log.i(TAG, "🕶️ Ícono de la app oculto del Launcher. Estado del alias verificado: $estadoVerificado (2 = DISABLED)")
             } else {
                 Log.i(TAG, "👁️ Ícono de la app restaurado en el Launcher")
             }

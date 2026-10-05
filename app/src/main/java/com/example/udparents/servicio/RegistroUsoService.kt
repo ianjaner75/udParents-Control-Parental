@@ -135,11 +135,18 @@ class RegistroUsoService : Service() {
         }
         // 🕶️ Stealth Mode: si el hijo ya está vinculado, persistir su sesión local.
         persistirSesionHijoLocal()
-        if (foregroundActivo) {
-            // El ícono SOLO se oculta con el servicio ya promovido a foreground.
-            ModoSigiloso.ocultarIconoApp(applicationContext)
+        // 🔓 IMPORTANTE: la ocultación del ícono es estado del PackageManager y NO
+        // depende de que el servicio se haya promovido a foreground. Se oculta
+        // SIEMPRE que haya vinculación activa; condicionarlo al foreground hacía
+        // que el ícono nunca se ocultara cuando el sistema rechazaba el FGS
+        // (p. ej. presupuesto dataSync agotado).
+        if (SharedPreferencesUtil.obtenerUidPadre(applicationContext).isNullOrBlank()) {
+            Log.d("RegistroUsoService", "Sin vinculación activa; no se oculta el ícono.")
         } else {
-            Log.w("RegistroUsoService", "⚠️ Stealth Mode pospuesto: el servicio no pudo promoverse a foreground. Se reintentará en el próximo arranque.")
+            ModoSigiloso.ocultarIconoApp(applicationContext)
+        }
+        if (!foregroundActivo) {
+            Log.w("RegistroUsoService", "⚠️ El servicio no pudo promoverse a foreground; el monitoreo continúa en segundo plano.")
         }
         // 📡 Escuchar en tiempo real la desvinculación remota autorizada por el padre.
         DesvinculacionRemota.iniciarEscucha(applicationContext)
