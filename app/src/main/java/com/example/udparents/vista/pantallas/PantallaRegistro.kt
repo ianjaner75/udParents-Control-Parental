@@ -12,6 +12,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
@@ -44,13 +46,35 @@ fun PantallaRegistro(
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(bottom = 24.dp)
         )
+        val nombreNormalizado = remember(usuario.nombre) {
+            usuario.nombre.trim().replace("\\s+".toRegex(), " ")
+        }
+        val partes = nombreNormalizado.split(" ")
+        val tieneNombreApellido = partes.size >= 2 && partes[0].length >= 2 && partes[1].length >= 2
+        val largoOk = nombreNormalizado.replace(" ", "").length >= 10
+        val nombreValido = tieneNombreApellido && largoOk
+
 
         OutlinedTextField(
             value = usuario.nombre,
             onValueChange = { viewModel.actualizarNombre(it) },
-            label = { Text("Nombre") },
-            modifier = Modifier.fillMaxWidth()
+            label = { Text("Nombre y apellido") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(
+                capitalization = KeyboardCapitalization.Words,
+                autoCorrect = true,
+                keyboardType = KeyboardType.Text,
+                imeAction = ImeAction.Next
+            ),
+            isError = usuario.nombre.isNotBlank() && !nombreValido,
+            supportingText = {
+                if (usuario.nombre.isNotBlank() && !nombreValido) {
+                    Text("Escribe nombre y apellido (mín. 10 letras en total).")
+                }
+            }
         )
+
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -58,21 +82,24 @@ fun PantallaRegistro(
             value = usuario.correo,
             onValueChange = { viewModel.actualizarCorreo(it) },
             label = { Text("Correo electrónico") },
-            keyboardOptions = KeyboardOptions.Default.copy(keyboardType = KeyboardType.Email),
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Email,
+                imeAction = ImeAction.Next
+            ),
             modifier = Modifier.fillMaxWidth()
         )
-
-        Spacer(modifier = Modifier.height(16.dp))
 
         OutlinedTextField(
             value = usuario.contrasena,
             onValueChange = { viewModel.actualizarContrasena(it) },
             label = { Text("Contraseña") },
             visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Password,
+                imeAction = ImeAction.Done
+            ),
             modifier = Modifier.fillMaxWidth()
         )
-
-        Spacer(modifier = Modifier.height(24.dp))
 
         Button(
             onClick = {

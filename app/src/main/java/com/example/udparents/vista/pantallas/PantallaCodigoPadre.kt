@@ -15,7 +15,7 @@ import com.google.firebase.auth.FirebaseAuth
 
 @Composable
 fun PantallaCodigoPadre(
-    onVolverAlMenuPrincipal: () -> Unit // 👈 nuevo parámetro
+    onVolverAlMenuPrincipal: () -> Unit
 ) {
     val viewModel: VistaModeloVinculacion = viewModel()
     val codigoGenerado by viewModel.codigoGenerado.collectAsState()

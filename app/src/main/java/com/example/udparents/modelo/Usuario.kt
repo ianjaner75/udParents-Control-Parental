@@ -7,7 +7,9 @@ import com.example.udparents.utilidades.esCorreoValido
 data class Usuario(
     val nombre: String = "",
     val correo: String = "",
-    val contrasena: String = "" // también puede estar aquí si se requiere validación completa
+    val contrasena: String = "",
+    val alertaContenidoProhibido: Boolean = false,//para el envio de la notificacion al correo
+
 ) {
     fun esValido(): Boolean {
         return  campoNoVacio(nombre) && esCorreoValido(correo) && esContrasenaValida(contrasena)

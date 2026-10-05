@@ -8,12 +8,14 @@ espressoCore = "3.6.1"
 lifecycleRuntimeKtx = "2.9.1"
 activityCompose = "1.10.1"
 composeBom = "2024.09.00"
-firebaseAuthKtx = "23.2.1"
+# Se eliminaron las versiones de Firebase Auth y Firestore aquí,
+# ya que la BOM de Firebase gestionará sus versiones.
 navigationRuntimeAndroid = "2.9.1"
 navigationComposeAndroid = "2.9.1"
 navigationComposeJvmstubs = "2.9.1"
 adsMobileSdk = "0.17.0-alpha02"
-firebaseFirestoreKtx = "25.1.4"
+appcompat = "1.7.1"
+
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -30,16 +32,21 @@ androidx-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-toolin
 androidx-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
 androidx-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
 androidx-material3 = { group = "androidx.compose.material3", name = "material3" }
-firebase-auth-ktx = { group = "com.google.firebase", name = "firebase-auth-ktx", version.ref = "firebaseAuthKtx" }
+
+# Se modificó esta línea para eliminar 'version.ref'
+firebase-auth-ktx = { group = "com.google.firebase", name = "firebase-auth-ktx" }
+
 androidx-navigation-runtime-android = { group = "androidx.navigation", name = "navigation-runtime-android", version.ref = "navigationRuntimeAndroid" }
 androidx-navigation-compose-android = { group = "androidx.navigation", name = "navigation-compose-android", version.ref = "navigationComposeAndroid" }
 androidx-navigation-compose-jvmstubs = { group = "androidx.navigation", name = "navigation-compose-jvmstubs", version.ref = "navigationComposeJvmstubs" }
 ads-mobile-sdk = { group = "com.google.android.libraries.ads.mobile.sdk", name = "ads-mobile-sdk", version.ref = "adsMobileSdk" }
-firebase-firestore-ktx = { group = "com.google.firebase", name = "firebase-firestore-ktx", version.ref = "firebaseFirestoreKtx" }
+
+# Se modificó esta línea para eliminar 'version.ref'
+firebase-firestore-ktx = { group = "com.google.firebase", name = "firebase-firestore-ktx" }
+androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
-google-services = { id = "com.google.gms.google-services", version = "4.3.15" }
-
+google-services = { id = "com.google.gms.google-services", version = "4.3.15" } # Considera actualizar a la última versión (ej: 4.4.2)
