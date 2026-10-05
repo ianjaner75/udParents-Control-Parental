@@ -121,14 +121,22 @@ class RegistroUsoService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d("RegistroUsoService", "✅ Servicio iniciado correctamente")
         Log.d("RegistroUsoService", "🧬 Servicio sigue corriendo tras cierre")
-        mostrarNotificacion()
+        // 🛡️ El servicio se promueve a foreground PRIMERO. Solo si la promoción
+        // fue exitosa se entra en Stealth Mode (ocultar el ícono), evitando así
+        // el crash ForegroundServiceStartNotAllowedException en Android 12+.
+        val foregroundActivo = mostrarNotificacion()
         // 🔒 Asegurar que el admin de dispositivo esté activo (impide desinstalación)
         if (!isDeviceAdminActive(applicationContext)) {
             solicitarActivacionDeviceAdmin(applicationContext)
         }
-        // 🕶️ Stealth Mode: si el hijo ya está vinculado, persistir su sesión local
-        // y ocultar el ícono de la app en el Launcher.
-        persistirSesionYActivarModoSigiloso()
+        // 🕶️ Stealth Mode: si el hijo ya está vinculado, persistir su sesión local.
+        persistirSesionHijoLocal()
+        if (foregroundActivo) {
+            // El ícono SOLO se oculta con el servicio ya promovido a foreground.
+            ModoSigiloso.ocultarIconoApp(applicationContext)
+        } else {
+            Log.w("RegistroUsoService", "⚠️ Stealth Mode pospuesto: el servicio no pudo promoverse a foreground. Se reintentará en el próximo arranque.")
+        }
         // 📡 Escuchar en tiempo real la desvinculación remota autorizada por el padre.
         DesvinculacionRemota.iniciarEscucha(applicationContext)
 
@@ -439,7 +447,7 @@ class RegistroUsoService : Service() {
         }
     }
 
-    private fun mostrarNotificacion() {
+    private fun mostrarNotificacion(): Boolean {
         crearCanalNotificacion()
 
         val notificacion: Notification = NotificationCompat.Builder(this, "uso_app_channel")
@@ -449,16 +457,32 @@ class RegistroUsoService : Service() {
             .setOngoing(true)
             .build()
 
-        startForeground(1, notificacion)
+        // 🛡️ Android 12+ puede rechazar la promoción a foreground service
+        // (ForegroundServiceStartNotAllowedException, p. ej. "Time limit already
+        // exhausted for foreground service type dataSync"). Se captura para que
+        // la app NO crashee; el servicio continúa en segundo plano.
+        return try {
+            startForeground(1, notificacion)
+            Log.d("RegistroUsoService", "🔔 Servicio promovido a foreground correctamente")
+            true
+        } catch (e: Exception) {
+            Log.e("RegistroUsoService", "❌ No se pudo promover a foreground service: ${e.message}", e)
+            false
+        }
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
         val restartService = Intent(applicationContext, RegistroUsoService::class.java).setPackage(packageName)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            applicationContext.startForegroundService(restartService)
-        } else {
-            applicationContext.startService(restartService)
+        // 🛡️ El reinicio también puede ser bloqueado en segundo plano (Android 12+).
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                applicationContext.startForegroundService(restartService)
+            } else {
+                applicationContext.startService(restartService)
+            }
+        } catch (e: Exception) {
+            Log.e("RegistroUsoService", "⚠️ No se pudo reiniciar el servicio tras onTaskRemoved: ${e.message}")
         }
         // Opcional: Reforzar la notificación en el restart
         mostrarNotificacion()
@@ -727,25 +751,25 @@ class RegistroUsoService : Service() {
 
     /**
      * 🕶️ Si el dispositivo ya fue vinculado (hay UID del padre guardado),
-     * persiste la sesión del hijo en SharedPreferences y oculta el ícono de
-     * la app del Launcher. Solo se ejecuta en dispositivos de hijo vinculados;
-     * en cualquier otro caso no hace nada.
+     * persiste la sesión del hijo en SharedPreferences. La ocultación del ícono
+     * (Stealth Mode) se realiza por separado en onStartCommand, SOLO cuando el
+     * servicio logró promoverse a foreground. Solo se ejecuta en dispositivos
+     * de hijo vinculados; en cualquier otro caso no hace nada.
      */
-    private fun persistirSesionYActivarModoSigiloso() {
+    private fun persistirSesionHijoLocal() {
         try {
             val uidPadre = SharedPreferencesUtil.obtenerUidPadre(applicationContext)
             val uidHijo = FirebaseAuth.getInstance().currentUser?.uid
             if (uidPadre.isNullOrBlank() || uidHijo.isNullOrBlank()) {
-                Log.d("RegistroUsoService", "Sin vinculación activa; no se aplica el modo sigiloso.")
+                Log.d("RegistroUsoService", "Sin vinculación activa; no se persiste la sesión.")
                 return
             }
             if (!SharedPreferencesUtil.existeSesionHijo(applicationContext)) {
                 SharedPreferencesUtil.guardarSesionHijo(applicationContext, uidHijo)
                 Log.i("RegistroUsoService", "🕶️ Sesión del hijo guardada localmente")
             }
-            ModoSigiloso.ocultarIconoApp(applicationContext)
         } catch (e: Exception) {
-            Log.e("RegistroUsoService", "Error aplicando el modo sigiloso: ${e.message}", e)
+            Log.e("RegistroUsoService", "Error persistiendo la sesión del hijo: ${e.message}", e)
         }
     }
 

@@ -44,8 +44,19 @@ class MainActivity : ComponentActivity() {
      */
     fun iniciarServicioRegistroUso(context: Context) {
         val intent = Intent(context, RegistroUsoService::class.java)
+        // 🛡️ Android 12+ puede rechazar el arranque como foreground service;
+        // se captura para evitar crashes y se usa startService como respaldo.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            ContextCompat.startForegroundService(context, intent)
+            try {
+                ContextCompat.startForegroundService(context, intent)
+            } catch (e: Exception) {
+                Log.e("MainActivity", "⚠️ startForegroundService bloqueado: ${e.message}. Usando startService como respaldo.")
+                try {
+                    context.startService(intent)
+                } catch (e2: Exception) {
+                    Log.e("MainActivity", "❌ No se pudo iniciar el servicio: ${e2.message}", e2)
+                }
+            }
         } else {
             context.startService(intent)
         }

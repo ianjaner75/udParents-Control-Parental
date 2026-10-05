@@ -507,8 +507,22 @@ fun pedirPermisoAccesibilidad(context: Context) {
 fun iniciarServicioRegistroUso(context: Context) {
     val intent = Intent(context, RegistroUsoService::class.java)
     Log.d("PantallaVinculacionHijo", "Iniciando servicio de registro de uso")
+    // 🛡️ El servicio se inicia AQUÍ, mientras la actividad aún está visible y
+    // ANTES de entrar en Stealth Mode (el ícono solo lo oculta el servicio una
+    // vez promovido a foreground). En Android 12+ el sistema puede rechazar el
+    // arranque como foreground service; se captura el error y se usa startService
+    // como respaldo para que el flujo de vinculación NUNCA crashee.
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        context.startForegroundService(intent)
+        try {
+            context.startForegroundService(intent)
+        } catch (e: Exception) {
+            Log.e("PantallaVinculacionHijo", "⚠️ startForegroundService bloqueado por el sistema: ${e.message}. Usando startService como respaldo.")
+            try {
+                context.startService(intent)
+            } catch (e2: Exception) {
+                Log.e("PantallaVinculacionHijo", "❌ No se pudo iniciar el servicio: ${e2.message}", e2)
+            }
+        }
     } else {
         context.startService(intent)
     }

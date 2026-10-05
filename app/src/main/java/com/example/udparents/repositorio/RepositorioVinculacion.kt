@@ -1,5 +1,6 @@
 package com.example.udparents.repositorio
 
+import android.util.Log
 import com.example.udparents.modelo.CodigoVinculacion
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
@@ -180,21 +181,41 @@ class RepositorioVinculacion {
             .whereEqualTo("dispositivoHijo", uidHijo)
             .get()
             .addOnSuccessListener { querySnapshot ->
-                if (!querySnapshot.isEmpty) {
-                    val document = querySnapshot.documents[0] // Asumimos una única vinculación por hijo
-                    document.reference.update(
-                        mapOf(
-                            "desvincular" to true,
-                            "timestampDesvinculacion" to System.currentTimeMillis()
-                        )
-                    )
-                        .addOnSuccessListener { onResult(true) }
-                        .addOnFailureListener { onResult(false) }
-                } else {
-                    onResult(false) // No se encontró el documento para desvincular
+                // 🎯 Se escribe la bandera en el documento EXACTO de la vinculación
+                // ACTIVA (vinculado == true), no en cualquier documento que coincida.
+                val documentoObjetivo = querySnapshot.documents.firstOrNull {
+                    it.getBoolean("vinculado") == true
                 }
+                if (documentoObjetivo == null) {
+                    Log.w(
+                        "RepositorioVinculacion",
+                        "No se encontró la vinculación activa para autorizar la desvinculación (padre=$uidPadre, hijo=$uidHijo)"
+                    )
+                    onResult(false)
+                    return@addOnSuccessListener
+                }
+                documentoObjetivo.reference.update(
+                    mapOf(
+                        "desvincular" to true,
+                        "timestampDesvinculacion" to System.currentTimeMillis()
+                    )
+                )
+                    .addOnSuccessListener {
+                        Log.i(
+                            "RepositorioVinculacion",
+                            "🚩 Bandera 'desvincular=true' escrita en el documento ${documentoObjetivo.id}"
+                        )
+                        onResult(true)
+                    }
+                    .addOnFailureListener { e ->
+                        Log.e("RepositorioVinculacion", "Error escribiendo la bandera 'desvincular': ${e.message}", e)
+                        onResult(false)
+                    }
             }
-            .addOnFailureListener { onResult(false) }
+            .addOnFailureListener { e ->
+                Log.e("RepositorioVinculacion", "Error consultando la vinculación a desvincular: ${e.message}", e)
+                onResult(false)
+            }
     }
     fun obtenerEstadoAlertaContenidoPadre(
         uidPadre: String,

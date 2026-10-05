@@ -15,10 +15,21 @@ class BootReceiver : BroadcastReceiver() {
             val currentUser = FirebaseAuth.getInstance().currentUser
             if (currentUser != null) {
                 val serviceIntent = Intent(context, RegistroUsoService::class.java)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    context.startForegroundService(serviceIntent)
-                } else {
-                    context.startService(serviceIntent)
+                // 🛡️ Tras un reinicio, Android 12+ puede rechazar el arranque del
+                // foreground service; se captura para no crashear en el boot.
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        context.startForegroundService(serviceIntent)
+                    } else {
+                        context.startService(serviceIntent)
+                    }
+                } catch (e: Exception) {
+                    Log.e("BootReceiver", "⚠️ No se pudo iniciar el servicio tras el boot: ${e.message}")
+                    try {
+                        context.startService(serviceIntent)
+                    } catch (e2: Exception) {
+                        Log.e("BootReceiver", "❌ Respaldo startService también falló: ${e2.message}")
+                    }
                 }
             }else{
                 Log.w("BootReceiver", "No hay usuario hijo autenticado. No se inicia servicio.")
