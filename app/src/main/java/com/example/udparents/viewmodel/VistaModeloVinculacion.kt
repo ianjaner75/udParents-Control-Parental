@@ -165,6 +165,32 @@ class VistaModeloVinculacion(
         }
     }
 
+    fun solicitarDesinstalacion(
+        codigo: String,
+        idPadre: String,
+        onResultado: (Boolean, String?) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                val solicitado = repositorio.solicitarDesinstalacion(codigo, idPadre)
+                if (solicitado) {
+                    _dispositivosVinculados.value = _dispositivosVinculados.value.map { dispositivo ->
+                        if (dispositivo.codigo == codigo) {
+                            dispositivo.copy(desinstalacionSolicitada = true)
+                        } else {
+                            dispositivo
+                        }
+                    }
+                    onResultado(true, null)
+                } else {
+                    onResultado(false, "No se encontró un dispositivo vinculado a esta cuenta.")
+                }
+            } catch (e: Exception) {
+                onResultado(false, "No se pudo enviar la orden: ${e.localizedMessage ?: "error de conexión"}")
+            }
+        }
+    }
+
     fun actualizarDispositivoHijo(uid: String?) {
         uid?.let {
             _codigoVinculacion.value = _codigoVinculacion.value.copy(dispositivoHijo = it)
