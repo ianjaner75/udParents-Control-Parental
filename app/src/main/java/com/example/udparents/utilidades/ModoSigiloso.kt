@@ -53,16 +53,19 @@ object ModoSigiloso {
     private fun cambiarEstadoComponente(context: Context, estado: Int) {
         try {
             val componente = ComponentName(context.packageName, COMPONENTE_LAUNCHER)
-            val estadoActual = context.packageManager.getComponentEnabledSetting(componente)
-            if (estadoActual == estado) {
-                Log.d(TAG, "El ícono ya está en el estado deseado; no se hace nada.")
-                return
-            }
+            val estadoInicial = context.packageManager.getComponentEnabledSetting(componente)
+            Log.d(TAG, "Estado inicial del alias: $estadoInicial (estado objetivo: $estado)")
+            // 🔄 El estado se aplica SIEMPRE (sin early-return aunque ya coincida),
+            // de modo que el sistema re-procese el componente y los Launchers con
+            // caché agresiva (Samsung One UI) reciban el evento de cambio.
             context.packageManager.setComponentEnabledSetting(
                 componente,
                 estado,
                 PackageManager.DONT_KILL_APP
             )
+            // ✅ Verificación inmediata: leer el estado recién aplicado para saber
+            // con certeza si el sistema lo aceptó (visible en logcat).
+            val estadoVerificado = context.packageManager.getComponentEnabledSetting(componente)
             if (estado == PackageManager.COMPONENT_ENABLED_STATE_DISABLED) {
                 // 🔄 Forzar el refresco del Launcher: algunos (p. ej. Samsung One UI)
                 // no aplican el estado DISABLED en caliente mientras la app sigue
@@ -78,12 +81,17 @@ object ModoSigiloso {
                 } catch (e: Exception) {
                     Log.w(TAG, "No se pudo enviar al Launcher para forzar el refresco: ${e.message}")
                 }
-                // ✅ Verificación: leer el estado recién aplicado para confirmar en
-                // logcat que el sistema aceptó el DISABLED (2 = DISABLED).
-                val estadoVerificado = context.packageManager.getComponentEnabledSetting(componente)
-                Log.i(TAG, "🕶️ Ícono de la app oculto del Launcher. Estado del alias verificado: $estadoVerificado (2 = DISABLED)")
+                if (estadoVerificado == PackageManager.COMPONENT_ENABLED_STATE_DISABLED) {
+                    Log.i(TAG, "🕶️ Ícono oculto: el sistema APLICÓ DISABLED al alias (verificado: $estadoVerificado)")
+                } else {
+                    Log.e(TAG, "❌ El sistema NO aplicó DISABLED al alias (esperado 2, leído: $estadoVerificado)")
+                }
             } else {
-                Log.i(TAG, "👁️ Ícono de la app restaurado en el Launcher")
+                if (estadoVerificado == PackageManager.COMPONENT_ENABLED_STATE_ENABLED) {
+                    Log.i(TAG, "👁️ Ícono restaurado: el sistema APLICÓ ENABLED al alias (verificado: $estadoVerificado)")
+                } else {
+                    Log.e(TAG, "❌ El sistema NO aplicó ENABLED al alias (esperado 1, leído: $estadoVerificado)")
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error cambiando la visibilidad del ícono: ${e.message}", e)

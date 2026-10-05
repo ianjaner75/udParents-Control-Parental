@@ -121,9 +121,10 @@ class RegistroUsoService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d("RegistroUsoService", "✅ Servicio iniciado correctamente")
         Log.d("RegistroUsoService", "🧬 Servicio sigue corriendo tras cierre")
-        // 🛡️ El servicio se promueve a foreground PRIMERO. Solo si la promoción
-        // fue exitosa se entra en Stealth Mode (ocultar el ícono), evitando así
-        // el crash ForegroundServiceStartNotAllowedException en Android 12+.
+        // 🛡️ El servicio se promueve a foreground PRIMERO para el monitoreo.
+        // Si la promoción falla (p. ej. presupuesto dataSync agotado en Android 12+)
+        // NO se crashea y el Stealth Mode se aplica igualmente más abajo: la
+        // visibilidad del ícono no depende del foreground service.
         val foregroundActivo = mostrarNotificacion()
         // 🔒 El Administrador de Dispositivos SOLO se solicita desde la UI (botón
         // del diálogo de Administrador en PantallaVinculacionHijo). Lanzarlo desde
