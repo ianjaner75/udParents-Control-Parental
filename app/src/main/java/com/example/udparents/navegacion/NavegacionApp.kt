@@ -34,6 +34,8 @@ object Rutas {
     const val RESUMEN_TIEMPO = "resumen_tiempo"
     const val INFORME_APPS_MAS_USADAS = "informe_apps_mas_usadas"
     const val REGISTRO_BLOQUEOS = "registro_bloqueos"
+    const val UBICACION_TIEMPO_REAL = "ubicacion_tiempo_real"
+    const val MAPA_UBICACION = "mapa_ubicacion/{uidHijo}/{nombreHijo}"
 
 }
 
@@ -135,6 +137,10 @@ fun NavegacionApp() {
                 },
                 onIrARegistroBloqueos = {
                     navController.navigate(Rutas.REGISTRO_BLOQUEOS)
+                },
+                onIrAUbicacionTiempoReal = { hijos ->
+                    navController.currentBackStackEntry?.savedStateHandle?.set("hijosVinculados", hijos)
+                    navController.navigate(Rutas.UBICACION_TIEMPO_REAL)
                 }
             )
         }
@@ -240,6 +246,44 @@ fun NavegacionApp() {
                 onVolverAlMenuPadre = { navController.popBackStack() },
                 activity = activity,
                 navController = navController
+            )
+        }
+
+        // 🗺️ Ubicación en Tiempo Real: selección del hijo (se reutiliza la
+        // pantalla de selección existente) y mapa interactivo.
+        composable(Rutas.UBICACION_TIEMPO_REAL) {
+            val hijos = navController.previousBackStackEntry
+                ?.savedStateHandle
+                ?.get<List<Pair<String, String>>>("hijosVinculados")
+                ?: emptyList()
+
+            PantallaSeleccionHijo(
+                titulo = "Ubicación en Tiempo Real",
+                listaHijos = hijos,
+                onHijoSeleccionado = { uidHijo, nombreHijo ->
+                    navController.navigate(
+                        Rutas.MAPA_UBICACION
+                            .replace("{uidHijo}", uidHijo)
+                            .replace("{nombreHijo}", nombreHijo)
+                    )
+                },
+                onVolver = { navController.popBackStack() }
+            )
+        }
+
+        composable(
+            route = Rutas.MAPA_UBICACION,
+            arguments = listOf(
+                navArgument("uidHijo") { type = NavType.StringType },
+                navArgument("nombreHijo") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val uidHijo = backStackEntry.arguments?.getString("uidHijo") ?: ""
+            val nombreHijo = backStackEntry.arguments?.getString("nombreHijo") ?: ""
+            PantallaMapaUbicacion(
+                uidHijo = uidHijo,
+                nombreHijo = nombreHijo,
+                onVolver = { navController.popBackStack() }
             )
         }
 

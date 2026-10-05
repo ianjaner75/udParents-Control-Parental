@@ -32,7 +32,8 @@ fun PantallaPrincipal(
     onIrAProgramarRestricciones: (List<Pair<String, String>>) -> Unit,
     onIrAResumenTiempoPantalla: (List<Pair<String, String>>) -> Unit,
     onIrAInformeAppsMasUsadas: (List<Pair<String, String>>) -> Unit,
-    onIrARegistroBloqueos: (List<Pair<String, String>>) -> Unit
+    onIrARegistroBloqueos: (List<Pair<String, String>>) -> Unit,
+    onIrAUbicacionTiempoReal: (List<Pair<String, String>>) -> Unit
 ) {
     val vistaModelo: VistaModeloApps = viewModel()
     val hijosVinculados by vistaModelo.hijosVinculados.collectAsState()
@@ -217,6 +218,17 @@ fun PantallaPrincipal(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Resumen de Tiempo de Pantalla", color = Color.White)
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(
+                onClick = { onIrAUbicacionTiempoReal(hijosVinculados) },
+                enabled = hijosVinculados.isNotEmpty(),
+                shape = RoundedCornerShape(50),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF006666)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("📍 Ubicación en Tiempo Real", color = Color.White)
             }
 
             Spacer(modifier = Modifier.height(16.dp))

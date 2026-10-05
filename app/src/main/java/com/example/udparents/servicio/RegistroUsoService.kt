@@ -1,11 +1,22 @@
 package com.example.udparents.servicio
 
+import android.Manifest
 import android.app.*
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.IBinder
+import android.os.Looper
+import androidx.core.content.ContextCompat
+import com.example.udparents.modelo.UbicacionHijo
+import com.example.udparents.repositorio.RepositorioUbicacion
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.example.udparents.R
@@ -75,11 +86,19 @@ class RegistroUsoService : Service() {
     private val COOLDOWN_RECORDATORIO_MS = 5_000L  // cada 5 s como máximo (ajústalo)
     private val COTA_RECORDATORIO_MS = 60_000L      // solo recordar cuando queda ≤ 60 s (ajústalo)
 
+    // 📍 Ubicación en Tiempo Real: transmisión silenciosa hacia Firestore.
+    private lateinit var fusedLocationClient: FusedLocationProviderClient
+    private var locationCallback: LocationCallback? = null
+    private val intervaloUbicacionMs = 15_000L
+    private val repoUbicacion = RepositorioUbicacion()
+
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
+        // 📍 Cliente de ubicación fusionada (GPS/red eficientes de Google Play).
+        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         // Inicializa PowerManager y KeyguardManager
         pm = getSystemService(PowerManager::class.java)
         km = getSystemService(KeyguardManager::class.java)
@@ -151,6 +170,9 @@ class RegistroUsoService : Service() {
         }
         // 📡 Escuchar en tiempo real la desvinculación remota autorizada por el padre.
         DesvinculacionRemota.iniciarEscucha(applicationContext)
+        // 📍 Transmitir la ubicación a Firestore de forma silenciosa (solo si el
+        // permiso de ubicación fue concedido; nunca interfiere con el monitoreo).
+        iniciarReporteUbicacion()
 
         tareaMonitoreo = scope.launch {
             while (isActive) {
@@ -440,6 +462,8 @@ class RegistroUsoService : Service() {
         try { unregisterReceiver(screenReceiver) } catch (_: Exception) {}
         // 📡 Detener la escucha de desvinculación remota junto con el servicio.
         DesvinculacionRemota.detenerEscucha()
+        // 📍 Detener el reporte de ubicación.
+        detenerReporteUbicacion()
         scope.cancel()
         tareaMonitoreo?.cancel()
         tareaRegistroUso?.cancel()
@@ -783,6 +807,74 @@ class RegistroUsoService : Service() {
         } catch (e: Exception) {
             Log.e("RegistroUsoService", "Error persistiendo la sesión del hijo: ${e.message}", e)
         }
+    }
+
+    // ============================================================
+    // 📍 Ubicación en Tiempo Real (transmisión silenciosa del hijo)
+    // ============================================================
+
+    /**
+     * Inicia la obtención periódica de coordenadas con FusedLocationProviderClient
+     * y las publica en Firestore. Es completamente silencioso:
+     *  - Si el permiso de ubicación NO está concedido, no hace nada (solo loguea)
+     *    y el monitoreo de apps continúa intacto.
+     *  - Cada publicación corre en el scope IO del servicio y nunca lanza
+     *    excepciones hacia el ciclo de monitoreo.
+     */
+    private fun iniciarReporteUbicacion() {
+        if (locationCallback != null) return // ya activo (idempotente)
+        val permisoConcedido = ContextCompat.checkSelfPermission(
+            this, Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+        if (!permisoConcedido) {
+            Log.w("RegistroUsoService", "📍 Permiso de ubicación no concedido; no se reportarán coordenadas.")
+            return
+        }
+        val solicitud = LocationRequest.Builder(Priority.PRIORITY_BALANCED_POWER_ACCURACY, intervaloUbicacionMs)
+            .setMinUpdateIntervalMillis(10_000L)
+            .setMinUpdateDistanceMeters(5f)
+            .build()
+        locationCallback = object : LocationCallback() {
+            override fun onLocationResult(resultado: LocationResult) {
+                val loc = resultado.lastLocation ?: return
+                val uidHijo = FirebaseAuth.getInstance().currentUser?.uid ?: return
+                scope.launch {
+                    try {
+                        repoUbicacion.guardarUbicacion(
+                            UbicacionHijo(
+                                uidHijo = uidHijo,
+                                latitud = loc.latitude,
+                                longitud = loc.longitude,
+                                precision = loc.accuracy,
+                                velocidad = loc.speed,
+                                timestamp = System.currentTimeMillis()
+                            )
+                        )
+                    } catch (e: Exception) {
+                        Log.e("RegistroUsoService", "Error publicando la ubicación: ${e.message}")
+                    }
+                }
+            }
+        }
+        try {
+            fusedLocationClient.requestLocationUpdates(solicitud, locationCallback!!, Looper.getMainLooper())
+            Log.i("RegistroUsoService", "📍 Reporte de ubicación iniciado (intervalo ${intervaloUbicacionMs}ms)")
+        } catch (e: SecurityException) {
+            Log.e("RegistroUsoService", "📍 Permiso de ubicación revocado en caliente: ${e.message}")
+            locationCallback = null
+        }
+    }
+
+    /** Detiene el reporte de ubicación (se invoca en onDestroy y en la desvinculación). */
+    private fun detenerReporteUbicacion() {
+        locationCallback?.let { callback ->
+            try {
+                fusedLocationClient.removeLocationUpdates(callback)
+            } catch (e: Exception) {
+                Log.e("RegistroUsoService", "Error deteniendo el reporte de ubicación: ${e.message}")
+            }
+        }
+        locationCallback = null
     }
 
     //  Helpers Device Admin: comprobación de estado.

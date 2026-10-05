@@ -86,6 +86,13 @@ dependencies {
     implementation(libs.androidx.appcompat)
 
     // ---------------------------
+    // ✅ Mapas y Ubicación (Ubicación en Tiempo Real)
+    // ---------------------------
+    implementation("com.google.maps.android:maps-compose:4.4.1")
+    implementation("com.google.android.gms:play-services-maps:18.5.0")
+    implementation("com.google.android.gms:play-services-location:21.3.0")
+
+    // ---------------------------
     // ✅ Testing
     // ---------------------------
     testImplementation(libs.junit)
