@@ -83,9 +83,10 @@ fun PantallaCodigoPadre(
                 elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
                 modifier = Modifier.padding(vertical = 4.dp)
             ) {
-                if (qrBitmap != null) {
+                val bitmapActual = qrBitmap
+                if (bitmapActual != null) {
                     Image(
-                        bitmap = qrBitmap.asImageBitmap(),
+                        bitmap = bitmapActual.asImageBitmap(),
                         contentDescription = "Código QR de vinculación",
                         modifier = Modifier
                             .size(260.dp)

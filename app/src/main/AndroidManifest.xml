@@ -55,7 +55,7 @@
              con tu API Key de Google Maps SDK for Android. -->
         <meta-data
             android:name="com.google.android.geo.API_KEY"
-            android:value="@string/google_maps_api_key" />
+            android:value="AIzaSyCCTAEPAyJqcxSWHmwijZZ55c87TeAjw" />
 
         <activity
             android:name=".main.MainActivity"
