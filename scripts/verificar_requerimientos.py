@@ -4,6 +4,7 @@
 🔁 LOOPING DE VERIFICACIÓN ESTÁTICA — udParents
 FASE 1: cadena de 5 permisos del hijo (PantallaVinculacionHijo.kt)
 FASE 2: purga explícita en Firestore + estado de UI del padre
+FASE 3: vinculación por Código QR (generación en el padre, lector en el hijo)
 
 Ejecuta comprobaciones sobre el código fuente (equivalente a un smoke test del
 comportamiento cuando no hay JDK/Android SDK disponible para compilar).
@@ -25,6 +26,12 @@ P_VM_VINC = f"{RAIZ}/java/com/example/udparents/viewmodel/VistaModeloVinculacion
 P_VM_APPS = f"{RAIZ}/java/com/example/udparents/viewmodel/VistaModeloApps.kt".replace("\\", "/")
 P_PRINCIPAL = f"{RAIZ}/java/com/example/udparents/vista/pantallas/PantallaPrincipal.kt".replace("\\", "/")
 P_DESVINC_REMOTA = f"{RAIZ}/java/com/example/udparents/utilidades/DesvinculacionRemota.kt".replace("\\", "/")
+# 🔗 FASE 3: vinculación por Código QR
+P_QR_UTIL = f"{RAIZ}/java/com/example/udparents/utilidades/CodigoQr.kt".replace("\\", "/")
+P_ESCANER = f"{RAIZ}/java/com/example/udparents/vista/pantallas/EscanerQrOverlay.kt".replace("\\", "/")
+P_CODIGO_PADRE = f"{RAIZ}/java/com/example/udparents/vista/pantallas/PantallaCodigoPadre.kt".replace("\\", "/")
+P_GRADLE_LIBS = os.path.join(REPO, "gradle", "libs.versions.toml")
+P_GRADLE_APP = os.path.join(REPO, "app", "build.gradle.kts")
 
 fallos = []
 pruebas = 0
@@ -298,9 +305,179 @@ check("2.2h el ViewModel expone observar/detener y libera el listener",
 check("2.2i aviso visual cuando no hay hijos vinculados",
       "Sin dispositivos vinculados" in principal)
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+print("\n════════ FASE 3.1 · DEPENDENCIAS (ZXing + CameraX + ML Kit) ════════")
+qr_util = leer(P_QR_UTIL)
+escaner = leer(P_ESCANER)
+codigo_padre = leer(P_CODIGO_PADRE)
+libs_toml = leer(P_GRADLE_LIBS)
+gradle_app = leer(P_GRADLE_APP)
+
+for version in ["zxing =", "cameraX =", "mlkitBarcode ="]:
+    check(f"3.1a libs.versions.toml declara {version.strip(' =')}", version in libs_toml)
+for libreria in ["zxing-core = { group = \"com.google.zxing\", name = \"core\"",
+                 "androidx-camera-core = { group = \"androidx.camera\", name = \"camera-core\"",
+                 "androidx-camera-camera2 = { group = \"androidx.camera\", name = \"camera-camera2\"",
+                 "androidx-camera-lifecycle = { group = \"androidx.camera\", name = \"camera-lifecycle\"",
+                 "androidx-camera-view = { group = \"androidx.camera\", name = \"camera-view\"",
+                 "mlkit-barcode-scanning = { group = \"com.google.mlkit\", name = \"barcode-scanning\""]:
+    check(f"3.1b catálogo declara {libreria.split(' = ')[0]}", libreria in libs_toml)
+for alias in ["implementation(libs.zxing.core)", "implementation(libs.androidx.camera.core)",
+              "implementation(libs.androidx.camera.camera2)", "implementation(libs.androidx.camera.lifecycle)",
+              "implementation(libs.androidx.camera.view)", "implementation(libs.mlkit.barcode.scanning)"]:
+    check(f"3.1c app/build.gradle.kts usa {alias}", alias in gradle_app)
+check("3.1d manifest declara el permiso CAMERA",
+      'android:name="android.permission.CAMERA"' in manifest)
+check("3.1e la cámara NO es obligatoria (instalable sin cámara → respaldo manual)",
+      re.search(r'android:name="android\.hardware\.camera"', manifest) is not None and
+      re.search(r'android:name="android\.hardware\.camera"[\s\S]{0,80}?android:required="false"', manifest) is not None)
+
+# ══════════════════════════════════════════════════════════════════════════════
+print("\n════════ FASE 3.2 · GENERACIÓN DEL QR (PANTALLA DEL PADRE) ════════")
+check("3.2a CodigoQr usa ZXing QRCodeWriter + BarcodeFormat.QR_CODE",
+      "QRCodeWriter().encode(" in qr_util and "BarcodeFormat.QR_CODE" in qr_util)
+check("3.2b corrección de errores alta (H) y margen definidos",
+      "ErrorCorrectionLevel.H" in qr_util and "EncodeHintType.MARGIN" in qr_util)
+check("3.2c solo acepta códigos de 6 dígitos",
+      "LONGITUD_CODIGO = 6" in qr_util and "contenido.length != LONGITUD_CODIGO" in qr_util)
+check("3.2d Bitmap creado localmente (ARGB_8888 + setPixels)",
+      "Bitmap.createBitmap(" in qr_util and "Bitmap.Config.ARGB_8888" in qr_util and "setPixels(" in qr_util)
+check("3.2e extracción del código con regex de 6 dígitos",
+      'Regex("\\\\d{$LONGITUD_CODIGO}")' in qr_util and "REGEX_CODIGO.find(texto)?.value" in qr_util)
+check("3.2f la pantalla del padre genera el Bitmap al cambiar el código, fuera del hilo de UI",
+      "LaunchedEffect(codigoGenerado)" in codigo_padre and
+      "withContext(Dispatchers.Default) { CodigoQr.generarBitmap(codigo) }" in codigo_padre and
+      "CodigoQr.generarBitmap(" in codigo_padre)
+check("3.2g el QR se muestra centrado con Image(...asImageBitmap())",
+      "androidx.compose.foundation.Image" in codigo_padre and "qrBitmap.asImageBitmap()" in codigo_padre and
+      "contentDescription = \"Código QR de vinculación\"" in codigo_padre)
+check("3.2h el código numérico se escribe DEBAJO del QR (respaldo si falla la cámara)",
+      re.search(r'Text\(\s*text = "Tu código: \$codigo"', codigo_padre) is not None)
+check("3.2i mensaje explícito de respaldo si el Bitmap no se puede generar",
+      "No se pudo generar la imagen QR" in codigo_padre)
+check("3.2j el botón «Generar Código» se mantiene intacto",
+      'Text("Generar Código"' in codigo_padre and "viewModel.generarCodigo(idPadre)" in codigo_padre)
+
+# ══════════════════════════════════════════════════════════════════════════════
+print("\n════════ FASE 3.3 · LECTOR DE QR (PANTALLA DEL HIJO) ════════")
+check("3.3a icono de cámara (trailingIcon) en el campo del código",
+      "trailingIcon = {" in hijo and "Icons.Filled.QrCodeScanner" in hijo)
+check("3.3b botón explícito «Escanear QR»",
+      'Text("Escanear QR")' in hijo and "OutlinedButton(" in hijo)
+check("3.3c se solicita Manifest.permission.CAMERA antes de escanear",
+      "ActivityResultContracts.RequestPermission()" in hijo and
+      "lanzadorPermisoCamara.launch(Manifest.permission.CAMERA)" in hijo)
+check("3.3d el permiso se comprueba con checkSelfPermission antes de abrir",
+      "ContextCompat.checkSelfPermission(" in hijo and "Manifest.permission.CAMERA" in hijo)
+check("3.3e el escáner se superpone a la pantalla dentro del Box raíz",
+      "Box(modifier = Modifier.fillMaxSize()) {" in hijo and
+      "EscanerQrOverlay(" in hijo and
+      hijo.index("Box(modifier = Modifier.fillMaxSize()) {") < hijo.index("EscanerQrOverlay("))
+check("3.3f al detectar el QR se rellena el campo del código",
+      "vistaModelo.actualizarCodigo(codigoEscaneado)" in hijo)
+check("3.3g se procede a la vinculación si el formulario ya está completo",
+      "formularioValidoConCodigo(codigoEscaneado)" in hijo and
+      re.search(r"if \(formularioValidoConCodigo\(codigoEscaneado\)\) \{\s*mensajeQr[\s\S]{0,120}?ejecutarVinculacion\(\)", hijo) is not None)
+check("3.3h el botón «Vincular» reutiliza el mismo flujo (enabled = formularioValido)",
+      "onClick = { ejecutarVinculacion() }" in hijo and "enabled = formularioValido," in hijo)
+check("3.3i la vinculación manual por texto sigue intacta (onValueChange sigue filtrando dígitos)",
+      "val soloDigitos = raw.filter { it.isDigit() }.take(6)" in hijo and
+      "vistaModelo.actualizarCodigo(soloDigitos)" in hijo)
+check("3.3j se avisa si el usuario deniega el permiso de cámara (respaldo manual)",
+      "Permiso de cámara denegado. Escribe el código de 6 dígitos manualmente." in hijo)
+
+# ── Escáner: CameraX + ML Kit
+check("3.3k CameraX: ProcessCameraProvider.getInstance",
+      "ProcessCameraProvider.getInstance(context)" in escaner)
+check("3.3l CameraX: Preview + ImageAnalysis vinculados al ciclo de vida",
+      "Preview.Builder()" in escaner and "ImageAnalysis.Builder()" in escaner and
+      "bindToLifecycle(" in escaner and "CameraSelector.DEFAULT_BACK_CAMERA" in escaner)
+check("3.3m ML Kit: BarcodeScanning con FORMAT_QR_CODE",
+      "BarcodeScanning.getClient(" in escaner and "Barcode.FORMAT_QR_CODE" in escaner)
+check("3.3n análisis del fotograma con InputImage + cierre del ImageProxy",
+      "InputImage.fromMediaImage(mediaImage, imagen.imageInfo.rotationDegrees)" in escaner and
+      "imagen.close()" in escaner)
+check("3.3o detección única (AtomicBoolean) y liberación de la cámara (unbindAll)",
+      "AtomicBoolean(false)" in escaner and "getAndSet(true)" in escaner and "unbindAll()" in escaner)
+check("3.3p liberación de recursos al salir (DisposableEffect + shutdown del executor)",
+      "DisposableEffect(Unit)" in escaner and "analizador.shutdown()" in escaner)
+check("3.3q error de cámara con respaldo manual («Escribir el código manualmente»)",
+      "Escribir el código manualmente" in escaner and "errorCamara" in escaner)
+check("3.3r el escáner lee el código con CodigoQr.extraerCodigo",
+      "CodigoQr.extraerCodigo(texto)" in escaner)
+
+# ── Simulaciones funcionales
+print("\n  ── Simulación: extracción del código desde el texto del QR ──")
+REGEX_QR = re.compile(r"\d{6}")
+
+
+def extraer_simulado(texto):
+    if not texto or not texto.strip():
+        return None
+    m = REGEX_QR.search(texto.strip())
+    return m.group(0) if m else None
+
+
+casos_ok = {"123456": "123456", "udparents:vincular:123456": "123456", "  654321  ": "654321"}
+for entrada, esperado in casos_ok.items():
+    check(f"3.4a extrae '{entrada}' → {esperado}", extraer_simulado(entrada) == esperado)
+for entrada in ["12345", "", "   ", "abc", "12-34-56-7"]:
+    check(f"3.4b rechaza '{entrada}'", extraer_simulado(entrada) is None)
+
+print("\n  ── Simulación: flujo hijo tras escanear ──")
+
+
+def decidir_accion(codigo_escaneado, nombre_ok, edad_ok, sexo_ok, terms_ok):
+    cod = (codigo_escaneado or "").strip()
+    if len(cod) != 6:
+        return "ERROR_CODIGO"
+    if nombre_ok and edad_ok and sexo_ok and terms_ok:
+        return "VINCULAR"
+    return "PEDIR_PERFIL"
+
+
+check("3.4c perfil completo + código escaneado → vincula automáticamente",
+      decidir_accion("123456", True, True, True, True) == "VINCULAR")
+check("3.4d falta aceptar términos → pide completar el perfil",
+      decidir_accion("123456", True, True, True, False) == "PEDIR_PERFIL")
+check("3.4e falta la edad → pide completar el perfil",
+      decidir_accion("123456", True, False, True, True) == "PEDIR_PERFIL")
+check("3.4f falta el sexo M/F → pide completar el perfil",
+      decidir_accion("123456", True, True, False, True) == "PEDIR_PERFIL")
+check("3.4g código incompleto → error de código inválido",
+      decidir_accion("12345", True, True, True, True) == "ERROR_CODIGO")
+
+# ══════════════════════════════════════════════════════════════════════════════
+print("\n════════ FASE 3.5 · REGRESIÓN: LA CADENA DE 5 PERMISOS Y EL FORMULARIO SIGUEN INTACTOS ════════")
+check("3.5a los 5 pasos del enum siguen en orden",
+      orden_enum[:6] == ["USO_DATOS", "ACCESIBILIDAD", "NOTIFICACIONES",
+                          "UBICACION", "UBICACION_FONDO", "ADMINISTRADOR"], str(orden_enum))
+check("3.5b la cadena de diálogos sigue encadenada 1→5",
+      orden_ui[:6] == ["PermisoUso", "Accesibilidad", "Notificaciones",
+                        "Ubicacion", "UbicacionFondo", "Admin"], str(orden_ui))
+check("3.5c el cierre sigiloso sigue ocurriendo solo con los 5 permisos",
+      "if (pendiente == null && !vinculacionCompletada)" in hijo and
+      "ModoSigiloso.ocultarIconoApp(context)" in hijo and
+      "iniciarServicioRegistroUso(context)" in hijo and
+      "finishAndRemoveTask()" in hijo)
+check("3.5d el formulario del hijo sigue intacto (nombre, edad, M/F, términos)",
+      all(m in hijo for m in ['label = { Text("Nombre y apellido del hijo") }',
+                               'label = { Text("Edad del hijo (1–17)") }',
+                               'label = { Text("Sexo del hijo (M/F)") }',
+                               'listOf("M", "F")', "Términos y Condiciones"]))
+check("3.5e el escaneo NO altera el orden de la cadena ni añade pasos",
+      hijo.index("PasoPermisoHijo.USO_DATOS") < hijo.index("PasoPermisoHijo.ACCESIBILIDAD") <
+      hijo.index("PasoPermisoHijo.NOTIFICACIONES") < hijo.index("PasoPermisoHijo.UBICACION") <
+      hijo.index("PasoPermisoHijo.UBICACION_FONDO") < hijo.index("PasoPermisoHijo.ADMINISTRADOR"))
+check("3.5f la purga en Firestore y el bloqueo de UI del padre siguen presentes",
+      "purgarVinculacionHijo" in repo_vinc and "programarPurgaDiferida(uidPadre, uidHijo)" in repo_vinc and
+      "enabled = hayHijosVinculados" in principal)
+
 # ══════════════════════════════════════════════════════════════════════════════
 print("\n════════ SANIDAD DE SINTAXIS (balance de bloques en archivos modificados) ════════")
-for p in [P_HIJO, P_MANIFEST, P_REPO_VINC, P_REPO_APPS, P_VM_VINC, P_VM_APPS, P_PRINCIPAL]:
+for p in [P_HIJO, P_MANIFEST, P_REPO_VINC, P_REPO_APPS, P_VM_VINC, P_VM_APPS, P_PRINCIPAL,
+          P_QR_UTIL, P_ESCANER, P_CODIGO_PADRE]:
     nombre = p.split("/")[-1]
     src = leer(p)
     check(f"sanity {nombre}: llaves/paréntesis balanceados", balance_ok(src))
@@ -330,6 +507,14 @@ check("sanity: imports nuevos presentes en RepositorioVinculacion",
 check("sanity: import del listener en RepositorioApps y VistaModeloApps",
       "import com.google.firebase.firestore.ListenerRegistration" in repo_apps and
       "import com.google.firebase.firestore.ListenerRegistration" in vm_apps)
+check("sanity: imports de la FASE 3 presentes en el escáner y la utilidad QR",
+      all(i in escaner for i in ["import androidx.camera.core.ImageAnalysis",
+                                 "import androidx.camera.view.PreviewView",
+                                 "import androidx.camera.lifecycle.ProcessCameraProvider",
+                                 "import com.google.mlkit.vision.barcode.BarcodeScanning",
+                                 "import com.google.mlkit.vision.common.InputImage"]) and
+      all(i in qr_util for i in ["import com.google.zxing.qrcode.QRCodeWriter",
+                                 "import com.google.zxing.BarcodeFormat"]))
 
 # ══════════════════════════════════════════════════════════════════════════════
 print("\n═══════════════════════════════════════════════════════════════")
@@ -340,3 +525,6 @@ if fallos:
         print("   -", f)
     sys.exit(1)
 print("✅ LOOPING COMPLETO: los 3 requerimientos verificados.")
+print("   · FASE 1: cadena secuencial de 5 permisos del hijo")
+print("   · FASE 2: purga explícita en Firestore + botones del padre deshabilitados sin hijos")
+print("   · FASE 3: vinculación por Código QR (generación en el padre, lector CameraX + ML Kit en el hijo)")

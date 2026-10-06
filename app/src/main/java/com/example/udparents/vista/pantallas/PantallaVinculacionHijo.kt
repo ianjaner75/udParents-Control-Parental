@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
@@ -215,6 +216,78 @@ fun PantallaVinculacionHijo(
     val codigoValido = (codigoVinculacion?.codigo?.length == 6)
     val termsAceptados = codigoVinculacion?.termsAccepted == true
     val formularioValido = codigoValido && nombreValido && edadValida && sexoValido && termsAceptados
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 📷 VINCULACIÓN POR CÓDIGO QR
+    //    Complementa — NUNCA reemplaza — la vinculación manual por texto: el
+    //    escaneo solo rellena el mismo campo del código y reutiliza el mismo
+    //    flujo de vinculación.
+    // ══════════════════════════════════════════════════════════════════════════
+    var mostrarEscanerQr by remember { mutableStateOf(false) }
+    var mensajeQr by remember { mutableStateOf("") }
+
+    /** ✅ Valida el formulario con un código concreto (p. ej. el recién escaneado). */
+    fun formularioValidoConCodigo(codigo: String): Boolean =
+        codigo.trim().length == 6 && nombreValido && edadValida && sexoValido && termsAceptados
+
+    /** 🚀 Ejecuta la vinculación con los datos actuales del formulario. */
+    val ejecutarVinculacion: () -> Unit = {
+        vistaModelo.vincularHijoConDatos(
+            context = context,
+            onExito = { uidPadre ->
+                mensajeError = ""
+                vinculacionIniciada = true
+                SharedPreferencesUtil.guardarUidPadre(context, uidPadre)
+                Log.d("PantallaVinculacionHijo", "UID del padre guardado: $uidPadre")
+                // 🔗 Arranca la cadena secuencial de los 5 permisos:
+                // se abrirá el diálogo del primer permiso pendiente.
+                aplicarCadenaPermisos()
+            },
+            onError = { mensajeError = it }
+        )
+    }
+
+    // 🔓 Permiso de cámara: se solicita ANTES de abrir el escáner.
+    val lanzadorPermisoCamara = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { concedido ->
+        if (concedido) {
+            mensajeQr = ""
+            mostrarEscanerQr = true
+        } else {
+            mensajeQr = "Permiso de cámara denegado. Escribe el código de 6 dígitos manualmente."
+        }
+    }
+
+    /** 📷 Abre el escáner (pidiendo el permiso de cámara si aún no está concedido). */
+    val iniciarEscanerQr: () -> Unit = {
+        val concedido = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
+        if (concedido) {
+            mensajeQr = ""
+            mostrarEscanerQr = true
+        } else {
+            lanzadorPermisoCamara.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    /**
+     * 🎯 Resultado del escáner: rellena el campo del código y, si el formulario
+     * ya está completo, procede automáticamente a la vinculación.
+     */
+    val onCodigoQrDetectado: (String) -> Unit = { codigoEscaneado ->
+        mostrarEscanerQr = false
+        mensajeError = ""
+        vistaModelo.actualizarCodigo(codigoEscaneado)
+        if (formularioValidoConCodigo(codigoEscaneado)) {
+            mensajeQr = "✅ Código QR detectado: $codigoEscaneado. Vinculando…"
+            ejecutarVinculacion()
+        } else {
+            mensajeQr = "✅ Código QR detectado: $codigoEscaneado. Completa el perfil del hijo y pulsa «Vincular»."
+        }
+    }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(Unit) {
@@ -464,188 +537,223 @@ Al seleccionar “Acepto”, confirmas que eres el acudiente del menor y que aut
         )
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Vinculación del dispositivo") },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
+    // 📦 Box raíz: permite superponer el escáner de QR a pantalla completa.
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text("Vinculación del dispositivo") },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    )
                 )
-            )
-        }
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(horizontal = 24.dp)
-                .verticalScroll(rememberScrollState()),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Spacer(modifier = Modifier.height(16.dp))
+            }
+        ) { innerPadding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(horizontal = 24.dp)
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Spacer(modifier = Modifier.height(16.dp))
 
-            OutlinedTextField(
+                OutlinedTextField(
                 value = codigoVinculacion?.codigo ?: "",
                 onValueChange = { raw ->
                     mensajeError = ""
+                    // ✍️ Al escribir manualmente se limpia el aviso del escaneo.
+                    mensajeQr = ""
                     val soloDigitos = raw.filter { it.isDigit() }.take(6)
                     vistaModelo.actualizarCodigo(soloDigitos)
                 },
-                label = { Text("Código de vinculación (6 dígitos)") },
-                leadingIcon = { Icon(Icons.Default.Lock, contentDescription = "Código") },
-                keyboardOptions = KeyboardOptions.Default.copy(keyboardType = KeyboardType.Number),
-                modifier = Modifier.fillMaxWidth(),
-                isError = (codigoVinculacion?.codigo?.length ?: 0) in 1..5,
-                supportingText = {
-                    val len = codigoVinculacion?.codigo?.length ?: 0
-                    if (len in 1..5) Text("Debe tener 6 dígitos.", color = MaterialTheme.colorScheme.error)
-                }
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-            OutlinedTextField(
-                value = codigoVinculacion?.nombreHijo ?: "",
-                onValueChange = {
-                    mensajeError = ""
-                    vistaModelo.actualizarNombreHijo(it)
-                },
-                label = { Text("Nombre y apellido del hijo") },
-                leadingIcon = { Icon(Icons.Default.Person, contentDescription = "Nombre") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Text,
-                    capitalization = KeyboardCapitalization.Words,
-                    imeAction = ImeAction.Next
-                ),
-                isError = (codigoVinculacion?.nombreHijo?.isNotBlank() == true) && !nombreValido,
-                supportingText = {
-                    if ((codigoVinculacion?.nombreHijo?.isNotBlank() == true) && !nombreValido) {
-                        Text("Escribe nombre y apellido (mín. 10 letras en total).", color = MaterialTheme.colorScheme.error)
-                    }
-                }
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-            OutlinedTextField(
-                value = codigoVinculacion?.edadHijo?.takeIf { it > 0 }?.toString() ?: "",
-                onValueChange = { txt ->
-                    mensajeError = ""
-                    val valor = txt.toIntOrNull()
-                    if (valor == null) vistaModelo.actualizarEdadHijo(0)
-                    else vistaModelo.actualizarEdadHijo(valor)
-                },
-                label = { Text("Edad del hijo (1–17)") },
-                keyboardOptions = KeyboardOptions.Default.copy(keyboardType = KeyboardType.Number),
-                modifier = Modifier.fillMaxWidth(),
-                isError = (codigoVinculacion?.edadHijo ?: 0) !in 1..17,
-                supportingText = {
-                    if ((codigoVinculacion?.edadHijo ?: 0) !in 1..17) {
-                        Text("Ingresa una edad válida entre 1 y 17.", color = MaterialTheme.colorScheme.error)
-                    }
-                }
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-            var abierto by remember { mutableStateOf(false) }
-            val opcionesSexo = listOf("M", "F")
-            ExposedDropdownMenuBox(
-                expanded = abierto,
-                onExpandedChange = { abierto = !abierto },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                OutlinedTextField(
-                    value = codigoVinculacion?.sexoHijo ?: "",
-                    onValueChange = { /* readOnly */ },
-                    label = { Text("Sexo del hijo (M/F)") },
-                    readOnly = true,
-                    leadingIcon = { Icon(imageVector = Icons.Filled.Person, contentDescription = "Sexo") },
-                    modifier = Modifier
-                        .menuAnchor()
-                        .fillMaxWidth(),
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = abierto) },
-                    isError = sexoTexto.isNotBlank() && !sexoValido,
+                    label = { Text("Código de vinculación (6 dígitos)") },
+                    leadingIcon = { Icon(Icons.Default.Lock, contentDescription = "Código") },
+                    trailingIcon = {
+                        // 📷 Icono de cámara: abre el escáner de QR.
+                        IconButton(onClick = { iniciarEscanerQr() }) {
+                            Icon(
+                                imageVector = Icons.Filled.QrCodeScanner,
+                                contentDescription = "Escanear QR",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    },
+                    keyboardOptions = KeyboardOptions.Default.copy(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                    isError = (codigoVinculacion?.codigo?.length ?: 0) in 1..5,
                     supportingText = {
-                        if (sexoTexto.isBlank()) Text("Selecciona M o F.")
-                        else if (!sexoValido) Text("Valor inválido. Selecciona M o F.", color = MaterialTheme.colorScheme.error)
+                        val len = codigoVinculacion?.codigo?.length ?: 0
+                        if (len in 1..5) Text("Debe tener 6 dígitos.", color = MaterialTheme.colorScheme.error)
                     }
                 )
-                ExposedDropdownMenu(expanded = abierto, onDismissRequest = { abierto = false }) {
-                    opcionesSexo.forEach { opcion ->
-                        DropdownMenuItem(
-                            text = { Text(opcion) },
-                            onClick = {
-                                mensajeError = ""
-                                vistaModelo.actualizarSexoHijo(opcion)
-                                abierto = false
-                            }
-                        )
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Checkbox(
-                    checked = codigoVinculacion?.termsAccepted == true,
-                    onCheckedChange = { checked ->
-                        vistaModelo.actualizarTermsAceptados(checked)
-                    }
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Column(modifier = Modifier.weight(1f)) {
+                // 📷 Botón explícito «Escanear QR» (alternativa al código manual).
+                OutlinedButton(
+                    onClick = { iniciarEscanerQr() },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.QrCodeScanner,
+                        contentDescription = "Escanear QR"
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Escanear QR")
+                }
+
+                if (mensajeQr.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Acepto los",
-                        style = MaterialTheme.typography.bodyMedium
+                        text = mensajeQr,
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.bodySmall,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
-                    TextButton(onClick = { mostrarTerminosDialog = true }) {
-                        Text(
-                            "Términos y Condiciones",
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.padding(0.dp),
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                OutlinedTextField(
+                    value = codigoVinculacion?.nombreHijo ?: "",
+                    onValueChange = {
+                        mensajeError = ""
+                        vistaModelo.actualizarNombreHijo(it)
+                    },
+                    label = { Text("Nombre y apellido del hijo") },
+                    leadingIcon = { Icon(Icons.Default.Person, contentDescription = "Nombre") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Text,
+                        capitalization = KeyboardCapitalization.Words,
+                        imeAction = ImeAction.Next
+                    ),
+                    isError = (codigoVinculacion?.nombreHijo?.isNotBlank() == true) && !nombreValido,
+                    supportingText = {
+                        if ((codigoVinculacion?.nombreHijo?.isNotBlank() == true) && !nombreValido) {
+                            Text("Escribe nombre y apellido (mín. 10 letras en total).", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+                OutlinedTextField(
+                    value = codigoVinculacion?.edadHijo?.takeIf { it > 0 }?.toString() ?: "",
+                    onValueChange = { txt ->
+                        mensajeError = ""
+                        val valor = txt.toIntOrNull()
+                        if (valor == null) vistaModelo.actualizarEdadHijo(0)
+                        else vistaModelo.actualizarEdadHijo(valor)
+                    },
+                    label = { Text("Edad del hijo (1–17)") },
+                    keyboardOptions = KeyboardOptions.Default.copy(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                    isError = (codigoVinculacion?.edadHijo ?: 0) !in 1..17,
+                    supportingText = {
+                        if ((codigoVinculacion?.edadHijo ?: 0) !in 1..17) {
+                            Text("Ingresa una edad válida entre 1 y 17.", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+                var abierto by remember { mutableStateOf(false) }
+                val opcionesSexo = listOf("M", "F")
+                ExposedDropdownMenuBox(
+                    expanded = abierto,
+                    onExpandedChange = { abierto = !abierto },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    OutlinedTextField(
+                        value = codigoVinculacion?.sexoHijo ?: "",
+                        onValueChange = { /* readOnly */ },
+                        label = { Text("Sexo del hijo (M/F)") },
+                        readOnly = true,
+                        leadingIcon = { Icon(imageVector = Icons.Filled.Person, contentDescription = "Sexo") },
+                        modifier = Modifier
+                            .menuAnchor()
+                            .fillMaxWidth(),
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = abierto) },
+                        isError = sexoTexto.isNotBlank() && !sexoValido,
+                        supportingText = {
+                            if (sexoTexto.isBlank()) Text("Selecciona M o F.")
+                            else if (!sexoValido) Text("Valor inválido. Selecciona M o F.", color = MaterialTheme.colorScheme.error)
+                        }
+                    )
+                    ExposedDropdownMenu(expanded = abierto, onDismissRequest = { abierto = false }) {
+                        opcionesSexo.forEach { opcion ->
+                            DropdownMenuItem(
+                                text = { Text(opcion) },
+                                onClick = {
+                                    mensajeError = ""
+                                    vistaModelo.actualizarSexoHijo(opcion)
+                                    abierto = false
+                                }
+                            )
+                        }
                     }
                 }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Button(
-                onClick = {
-                    vistaModelo.vincularHijoConDatos(
-                        context = context,
-                        onExito = { uidPadre ->
-                            mensajeError = ""
-                            vinculacionIniciada = true
-                            SharedPreferencesUtil.guardarUidPadre(context, uidPadre)
-                            Log.d("PantallaVinculacionHijo", "UID del padre guardado: $uidPadre")
-                            // 🔗 Arranca la cadena secuencial de los 5 permisos:
-                            // se abrirá el diálogo del primer permiso pendiente.
-                            aplicarCadenaPermisos()
-                        },
-                        onError = { mensajeError = it }
-                    )
-                },
-                enabled = formularioValido,
-                modifier = Modifier.fillMaxWidth().height(48.dp)
-            ) {
-                Text("Vincular")
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            TextButton(onClick = { onVolverAlPadre() }) {
-                Text("Volver al menú principal")
-            }
-
-            if (mensajeError.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(16.dp))
-                Text(mensajeError, color = MaterialTheme.colorScheme.error)
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Checkbox(
+                        checked = codigoVinculacion?.termsAccepted == true,
+                        onCheckedChange = { checked ->
+                            vistaModelo.actualizarTermsAceptados(checked)
+                        }
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Acepto los",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        TextButton(onClick = { mostrarTerminosDialog = true }) {
+                            Text(
+                                "Términos y Condiciones",
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.padding(0.dp),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Button(
+                    onClick = { ejecutarVinculacion() },
+                    enabled = formularioValido,
+                    modifier = Modifier.fillMaxWidth().height(48.dp)
+                ) {
+                    Text("Vincular")
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                TextButton(onClick = { onVolverAlPadre() }) {
+                    Text("Volver al menú principal")
+                }
+
+                if (mensajeError.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(mensajeError, color = MaterialTheme.colorScheme.error)
+                }
             }
+        }
+
+        // 📷 Escáner de QR (CameraX + ML Kit) superpuesto a la pantalla del hijo.
+        //    Si el usuario cancela o la cámara falla, el código se escribe manualmente.
+        if (mostrarEscanerQr) {
+            EscanerQrOverlay(
+                onCodigoDetectado = onCodigoQrDetectado,
+                onCancelar = { mostrarEscanerQr = false }
+            )
         }
     }
 }

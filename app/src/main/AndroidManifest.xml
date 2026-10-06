@@ -21,6 +21,17 @@
          usuario a elegir "Permitir todo el tiempo" (obligatorio en Android 11+). -->
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
 
+    <!-- 📷 Vinculación por Código QR: cámara para escanear el QR que genera el
+         padre. La cámara NO es obligatoria: si el dispositivo no tiene (o el
+         permiso se deniega), el hijo puede escribir el código de 6 dígitos. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.camera.autofocus"
+        android:required="false" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
