@@ -4,6 +4,11 @@ import android.content.Context
 import android.content.ContextWrapper
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
@@ -60,6 +65,27 @@ fun NavegacionApp(deepLinkCode: String? = null) {
 
     if (activity == null) {
         return
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // 🔗 DEEP LINK → VINCULACIÓN DIRECTA
+    //    Cuando la app se abre desde el QR (`udparents://vincular?codigo=...`),
+    //    se salta la pantalla de Bienvenida (selección de rol) y aterriza
+    //    directamente en PantallaVinculacionHijo con el código pre-rellenado.
+    //    Solo se ejecuta UNA VEZ (el flag se resetea al recrear el composable).
+    // ════════════════════════════════════════════════════════════════════════
+    var deepLinkNavegado by remember { mutableStateOf(false) }
+
+    LaunchedEffect(deepLinkCode) {
+        if (!deepLinkNavegado && !deepLinkCode.isNullOrEmpty()) {
+            deepLinkNavegado = true
+            navController.navigate(Rutas.VINCULACION_HIJO) {
+                // Limpiar Bienvenida del back stack: el botón "Volver" del
+                // hijo navegará a BIENVENIDA, que es lo correcto si el usuario
+                // quiere elegir otro rol.
+                popUpTo(Rutas.BIENVENIDA) { inclusive = true }
+            }
+        }
     }
 
     NavHost(
