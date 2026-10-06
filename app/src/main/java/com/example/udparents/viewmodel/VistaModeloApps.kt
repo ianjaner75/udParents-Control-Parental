@@ -10,6 +10,7 @@ import com.example.udparents.modelo.RestriccionHorario
 import com.example.udparents.modelo.BloqueoRegistro
 import com.example.udparents.repositorio.RepositorioApps
 import com.example.udparents.repositorio.RepositorioBloqueos
+import com.google.firebase.firestore.ListenerRegistration
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -40,6 +41,9 @@ class VistaModeloApps : ViewModel() {
     val appsMasUsadas: StateFlow<Map<String, Long>> = _appsMasUsadas
     private val _registroBloqueos = MutableStateFlow<List<BloqueoRegistro>>(emptyList())
     val registroBloqueos: StateFlow<List<BloqueoRegistro>> = _registroBloqueos
+
+    /** 👂 Escucha en tiempo real de los hijos vinculados del padre. */
+    private var escuchaHijos: ListenerRegistration? = null
 
     fun cargarRestriccionesHorario(uidHijo: String) {
         viewModelScope.launch {
@@ -86,10 +90,48 @@ class VistaModeloApps : ViewModel() {
         }
     }
     fun cargarHijos(idPadre: String) {
+        // Si ya hay una escucha en tiempo real activa, ella es la fuente de verdad:
+        // no se sobrescribe la lista con una consulta puntual más antigua.
+        if (escuchaHijos != null) return
         viewModelScope.launch {
             val hijos = repositorio.obtenerHijosVinculados(idPadre)
             _hijosVinculados.value = hijos
         }
+    }
+
+    /**
+     * 👂 Observa en TIEMPO REAL los hijos vinculados del padre.
+     *
+     * Mantiene [_hijosVinculados] sincronizado con Firestore: al desvincular o
+     * purgar un hijo, la lista se actualiza sin recargar la pantalla y, si queda
+     * vacía (`.isEmpty()`), la UI del padre deshabilita los botones de monitoreo.
+     *
+     * Es idempotente: reemplaza cualquier escucha previa del mismo padre.
+     */
+    fun observarHijosVinculados(idPadre: String) {
+        escuchaHijos?.remove()
+        escuchaHijos = repositorio.escucharHijosVinculados(
+            idPadre = idPadre,
+            onCambio = { hijos ->
+                _hijosVinculados.value = hijos
+                Log.d("VistaModeloApps", "👂 Hijos vinculados actualizados en tiempo real: ${hijos.size}")
+            },
+            onError = { e ->
+                Log.e("VistaModeloApps", "Error observando hijos vinculados: ${e.message}", e)
+            }
+        )
+    }
+
+    /** 🔇 Detiene la escucha en tiempo real de hijos vinculados (p. ej. al cerrar sesión). */
+    fun detenerObservacionHijos() {
+        escuchaHijos?.remove()
+        escuchaHijos = null
+        _hijosVinculados.value = emptyList()
+    }
+
+    override fun onCleared() {
+        detenerObservacionHijos()
+        super.onCleared()
     }
 
     // Cambia el estado de bloqueo (true para bloquear, false para desbloquear)

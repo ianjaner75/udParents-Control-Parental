@@ -47,10 +47,22 @@ fun PantallaPrincipal(
     }
     val alertaActivada by vistaModeloUsuario.alertaContenido.collectAsState()
 
+    // 🔒 BLOQUEO CONDICIONAL DE LA UI: los botones de monitoreo solo se habilitan
+    //    cuando hay al menos un hijo vinculado (`hijosVinculados.isEmpty() == false`).
+    //    "Generar código de vinculación" y "Ver Dispositivos Vinculados" quedan
+    //    SIEMPRE habilitados para poder vincular un nuevo dispositivo.
+    val hayHijosVinculados = hijosVinculados.isNotEmpty()
 
-    // 1. Cargar hijos desde el ViewModel
+
+    // 1. 👂 Observar los hijos vinculados EN TIEMPO REAL (StateFlow).
+    //    Si el padre desvincula/purga a un hijo en Firestore, la lista se vacía
+    //    sola y la UI reacciona en el acto (bloqueo condicional de botones).
     LaunchedEffect(uidPadre) {
-        uidPadre?.let { vistaModelo.cargarHijos(it) }
+        if (uidPadre != null) {
+            vistaModelo.observarHijosVinculados(uidPadre)
+        } else {
+            vistaModelo.detenerObservacionHijos()
+        }
     }
 
     // 2. Lógica para obtener y guardar el token de FCM cuando el padre inicie sesión
@@ -131,7 +143,11 @@ fun PantallaPrincipal(
             Button(
                 onClick = { onIrAVinculacionPadre() },
                 shape = RoundedCornerShape(50),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF006699)),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF006699),
+                    disabledContainerColor = Color(0xFFB0BEC5),
+                    disabledContentColor = Color(0xFF607D8B)
+                ),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Generar código de vinculación", color = Color.White)
@@ -142,7 +158,11 @@ fun PantallaPrincipal(
             Button(
                 onClick = { onIrADispositivosVinculados() },
                 shape = RoundedCornerShape(50),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF336699)),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF336699),
+                    disabledContainerColor = Color(0xFFB0BEC5),
+                    disabledContentColor = Color(0xFF607D8B)
+                ),
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 8.dp)
@@ -152,11 +172,42 @@ fun PantallaPrincipal(
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            // 🚫 Sin hijos vinculados: aviso explícito. Los botones de monitoreo
+            //    quedan deshabilitados; solo "Generar código de vinculación" y
+            //    "Ver Dispositivos Vinculados" siguen operativos.
+            if (!hayHijosVinculados) {
+                Card(
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3CD)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp)
+                ) {
+                    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                        Text(
+                            text = "🚫 Sin dispositivos vinculados",
+                            fontSize = 16.sp,
+                            color = Color(0xFF8A6D3B)
+                        )
+                        Text(
+                            text = "Genera un código de vinculación y actívalo en el dispositivo de tu hijo para habilitar las opciones de monitoreo.",
+                            fontSize = 14.sp,
+                            color = Color(0xFF8A6D3B)
+                        )
+                    }
+                }
+            }
+
             Button(
                 onClick = { onIrAReporteApps(hijosVinculados) },
-                enabled = hijosVinculados.isNotEmpty(),
+                enabled = hayHijosVinculados,
                 shape = RoundedCornerShape(50),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6699CC)),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF6699CC),
+                    disabledContainerColor = Color(0xFFB0BEC5),
+                    disabledContentColor = Color(0xFF607D8B)
+                ),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Ver historial de uso", color = Color.White)
@@ -166,9 +217,13 @@ fun PantallaPrincipal(
 
             Button(
                 onClick = { onIrAInformeAppsMasUsadas(hijosVinculados) },
-                enabled = hijosVinculados.isNotEmpty(),
+                enabled = hayHijosVinculados,
                 shape = RoundedCornerShape(50),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6699CC)),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF6699CC),
+                    disabledContainerColor = Color(0xFFB0BEC5),
+                    disabledContentColor = Color(0xFF607D8B)
+                ),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Apps Más Usadas", color = Color.White)
@@ -178,9 +233,13 @@ fun PantallaPrincipal(
 
             Button(
                 onClick = { onIrARegistroBloqueos(hijosVinculados) },
-                enabled = hijosVinculados.isNotEmpty(),
+                enabled = hayHijosVinculados,
                 shape = RoundedCornerShape(50),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6699CC)),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF6699CC),
+                    disabledContainerColor = Color(0xFFB0BEC5),
+                    disabledContentColor = Color(0xFF607D8B)
+                ),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Registro de Bloqueos", color = Color.White)
@@ -190,9 +249,13 @@ fun PantallaPrincipal(
 
             Button(
                 onClick = { onIrAProgramarRestricciones(hijosVinculados) },
-                enabled = hijosVinculados.isNotEmpty(),
+                enabled = hayHijosVinculados,
                 shape = RoundedCornerShape(50),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF99CCFF)),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF99CCFF),
+                    disabledContainerColor = Color(0xFFB0BEC5),
+                    disabledContentColor = Color(0xFF607D8B)
+                ),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Programar restricciones", color = Color.White)
@@ -201,9 +264,13 @@ fun PantallaPrincipal(
             Spacer(modifier = Modifier.height(16.dp))
             Button(
                 onClick = { onIrAControlApps(hijosVinculados) },
-                enabled = hijosVinculados.isNotEmpty(),
+                enabled = hayHijosVinculados,
                 shape = RoundedCornerShape(50),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF99CCFF)),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF99CCFF),
+                    disabledContainerColor = Color(0xFFB0BEC5),
+                    disabledContentColor = Color(0xFF607D8B)
+                ),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Control de aplicaciones", color = Color.White)
@@ -212,9 +279,13 @@ fun PantallaPrincipal(
             Spacer(modifier = Modifier.height(16.dp))
             Button(
                 onClick = { onIrAResumenTiempoPantalla(hijosVinculados) },
-                enabled = hijosVinculados.isNotEmpty(),
+                enabled = hayHijosVinculados,
                 shape = RoundedCornerShape(50),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF336699)),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF336699),
+                    disabledContainerColor = Color(0xFFB0BEC5),
+                    disabledContentColor = Color(0xFF607D8B)
+                ),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Resumen de Tiempo de Pantalla", color = Color.White)
@@ -223,9 +294,13 @@ fun PantallaPrincipal(
             Spacer(modifier = Modifier.height(16.dp))
             Button(
                 onClick = { onIrAUbicacionTiempoReal(hijosVinculados) },
-                enabled = hijosVinculados.isNotEmpty(),
+                enabled = hayHijosVinculados,
                 shape = RoundedCornerShape(50),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF006666)),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF006666),
+                    disabledContainerColor = Color(0xFFB0BEC5),
+                    disabledContentColor = Color(0xFF607D8B)
+                ),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("📍 Ubicación en Tiempo Real", color = Color.White)
@@ -238,7 +313,11 @@ fun PantallaPrincipal(
                     onCerrarSesion()
                 },
                 shape = RoundedCornerShape(50),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF003366)),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF003366),
+                    disabledContainerColor = Color(0xFFB0BEC5),
+                    disabledContentColor = Color(0xFF607D8B)
+                ),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Cerrar sesión", color = Color.White)

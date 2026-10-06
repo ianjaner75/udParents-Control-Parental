@@ -10,10 +10,16 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.BIND_ACCESSIBILITY_SERVICE" tools:ignore="ProtectedPermissions" />
+    <!-- 🔔 Notificaciones (Android 13+ exige permiso en tiempo de ejecución) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- 📍 Ubicación en Tiempo Real (reporte silencioso del hijo / mapa del padre) -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- 🕓 Ubicación "todo el tiempo": imprescindible para que el hijo siga
+         reportando coordenadas con la app en segundo plano / pantalla apagada.
+         Se solicita SIEMPRE después de la ubicación en primer plano y se guía al
+         usuario a elegir "Permitir todo el tiempo" (obligatorio en Android 11+). -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
 
     <application
         android:allowBackup="true"

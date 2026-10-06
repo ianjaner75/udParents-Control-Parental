@@ -2,13 +2,42 @@ package com.example.udparents.repositorio
 
 import android.util.Log
 import com.example.udparents.modelo.CodigoVinculacion
+import com.google.firebase.firestore.DocumentReference
 import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
 class RepositorioVinculacion {
 
     private val db = FirebaseFirestore.getInstance()
     private val coleccionCodigos = db.collection("codigos_vinculacion") // Usamos una variable para evitar errores de escritura
+
+    private companion object {
+        const val TAG = "RepositorioVinculacion"
+
+        /**
+         * ⏳ Tiempo de gracia entre escribir la bandera `desvincular = true` (orden
+         * remota) y el borrado físico del documento en Firestore.
+         *
+         * Este margen es lo que permite que el listener en TIEMPO REAL del
+         * dispositivo del hijo reciba la orden y ejecute su limpieza local
+         * (restaurar ícono, detener servicio, quitar Administrador de Dispositivos)
+         * ANTES de que el documento desaparezca. Así la purga del padre NO rompe
+         * la lógica de desvinculación remota.
+         */
+        const val TIEMPO_GRACIA_PURGA_MS = 20_000L
+
+        /**
+         * Alcance de aplicación para la purga diferida: sobrevive a la destrucción
+         * del ViewModel/pantalla del padre, garantizando que el `.delete()` se
+         * ejecute aunque el padre cierre la app tras autorizar la desvinculación.
+         */
+        val ALCANCE_PURGAS = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    }
 
     suspend fun guardarCodigo(codigo: CodigoVinculacion) {
         coleccionCodigos
@@ -106,7 +135,11 @@ class RepositorioVinculacion {
             .whereEqualTo("dispositivoHijo", idDispositivo)
             .get()
             .await()
-        return !snapshot.isEmpty
+        // 🚩 Solo bloquea una nueva vinculación si existe al menos un documento
+        // ACTIVO. Una vinculación con 'desvincular = true' ya fue autorizada por
+        // el padre (y está en proceso de purga), por lo que no debe impedir que
+        // el mismo dispositivo se vuelva a vincular.
+        return snapshot.documents.any { it.getBoolean("desvincular") != true }
     }
     fun actualizarVinculacion(
         uidPadre: String,
@@ -141,22 +174,112 @@ class RepositorioVinculacion {
         uidHijo: String,
         onResult: (Boolean) -> Unit
     ) {
-        // En este caso, buscaremos el documento por el uidHijo para eliminarlo.
+        // 🧹 PURGA EXPLÍCITA: se buscan TODOS los documentos de vinculación del
+        // hijo y se borran físicamente de Firestore con .delete().
         coleccionCodigos
             .whereEqualTo("idPadre", uidPadre)
             .whereEqualTo("dispositivoHijo", uidHijo)
             .get()
             .addOnSuccessListener { querySnapshot ->
-                if (!querySnapshot.isEmpty) {
-                    val document = querySnapshot.documents[0] // Asumimos una única vinculación por hijo
-                    document.reference.delete()
-                        .addOnSuccessListener { onResult(true) }
-                        .addOnFailureListener { onResult(false) }
-                } else {
+                if (querySnapshot.isEmpty) {
                     onResult(false) // No se encontró el documento para eliminar
+                    return@addOnSuccessListener
                 }
+                eliminarDocumentos(
+                    referencias = querySnapshot.documents.map { it.reference },
+                    uidHijo = uidHijo,
+                    onResult = onResult
+                )
             }
-            .addOnFailureListener { onResult(false) }
+            .addOnFailureListener { e ->
+                Log.e(TAG, "❌ Error buscando la vinculación a eliminar (hijo=$uidHijo): ${e.message}", e)
+                onResult(false)
+            }
+    }
+
+    /**
+     * 🧹 Borra físicamente una lista de documentos con `.delete()`.
+     * El callback solo se invoca cuando TODAS las operaciones terminaron.
+     * @param referencias Documentos a eliminar.
+     * @param uidHijo UID del hijo (solo para trazabilidad en logs).
+     * @param onResult `true` si al menos un borrado no falló.
+     */
+    private fun eliminarDocumentos(
+        referencias: List<DocumentReference>,
+        uidHijo: String,
+        onResult: (Boolean) -> Unit
+    ) {
+        if (referencias.isEmpty()) {
+            onResult(false)
+            return
+        }
+        var pendientes = referencias.size
+        var algunExito = false
+        referencias.forEach { referencia ->
+            referencia.delete()
+                .addOnSuccessListener {
+                    algunExito = true
+                    Log.i(TAG, "🧹 Documento ${referencia.id} del hijo $uidHijo eliminado de Firestore")
+                    if (--pendientes == 0) onResult(algunExito)
+                }
+                .addOnFailureListener { e ->
+                    Log.e(TAG, "❌ No se pudo eliminar el documento ${referencia.id}: ${e.message}", e)
+                    if (--pendientes == 0) onResult(algunExito)
+                }
+        }
+    }
+
+    /**
+     * 🔥 Purga explícita (suspend) de la vinculación de un hijo en Firestore.
+     * Elimina con `.delete()` TODOS los documentos que coincidan con el par
+     * (padre, hijo). Se usa tanto en el borrado manual del padre como en la
+     * purga diferida posterior a la desvinculación remota.
+     *
+     * @return cantidad de documentos eliminados correctamente.
+     */
+    suspend fun purgarVinculacionHijo(uidPadre: String, uidHijo: String): Int {
+        val snapshot = try {
+            coleccionCodigos
+                .whereEqualTo("idPadre", uidPadre)
+                .whereEqualTo("dispositivoHijo", uidHijo)
+                .get()
+                .await()
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error consultando documentos a purgar (hijo=$uidHijo): ${e.message}", e)
+            return 0
+        }
+
+        var eliminados = 0
+        snapshot.documents.forEach { documento ->
+            try {
+                documento.reference.delete().await()
+                eliminados++
+                Log.i(TAG, "🧹 Documento ${documento.id} del hijo $uidHijo eliminado de Firestore")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ No se pudo eliminar el documento ${documento.id}: ${e.message}", e)
+            }
+        }
+        if (eliminados == 0) {
+            Log.d(TAG, "ℹ️ No quedaban documentos por purgar para el hijo $uidHijo")
+        }
+        return eliminados
+    }
+
+    /**
+     * ⏳ Programa la purga diferida del documento del hijo tras autorizar la
+     * desvinculación remota: primero se da tiempo al hijo para leer la bandera
+     * `desvincular = true` (lógica remota intacta) y después se borra el
+     * documento con [purgarVinculacionHijo].
+     */
+    private fun programarPurgaDiferida(uidPadre: String, uidHijo: String) {
+        ALCANCE_PURGAS.launch {
+            delay(TIEMPO_GRACIA_PURGA_MS)
+            val eliminados = purgarVinculacionHijo(uidPadre, uidHijo)
+            Log.i(
+                TAG,
+                "🧹 Purga diferida completada para el hijo $uidHijo: $eliminados documento(s) eliminado(s)"
+            )
+        }
     }
 
     /**
@@ -202,13 +325,20 @@ class RepositorioVinculacion {
                 )
                     .addOnSuccessListener {
                         Log.i(
-                            "RepositorioVinculacion",
+                            TAG,
                             "🚩 Bandera 'desvincular=true' escrita en el documento ${documentoObjetivo.id}"
                         )
+                        // 🧹 PURGA EXPLÍCITA EN FIRESTORE (además de la orden remota):
+                        // el padre borra físicamente el documento del hijo con
+                        // .delete(). Se hace de forma DIFERIDA para que el
+                        // dispositivo del hijo alcance a leer 'desvincular=true' y
+                        // complete su limpieza local; así la desvinculación remota
+                        // sigue funcionando igual que antes.
+                        programarPurgaDiferida(uidPadre, uidHijo)
                         onResult(true)
                     }
                     .addOnFailureListener { e ->
-                        Log.e("RepositorioVinculacion", "Error escribiendo la bandera 'desvincular': ${e.message}", e)
+                        Log.e(TAG, "Error escribiendo la bandera 'desvincular': ${e.message}", e)
                         onResult(false)
                     }
             }

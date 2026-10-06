@@ -10,6 +10,7 @@ import com.google.firebase.ktx.Firebase
 import java.util.Calendar
 import java.util.Date
 import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.ListenerRegistration
 import java.util.Locale
 
 class RepositorioApps {
@@ -199,10 +200,57 @@ class RepositorioApps {
             .await()
 
         return snapshot.documents.mapNotNull {
+            // 🚩 Se excluyen las vinculaciones cuya desvinculación ya fue autorizada
+            // (el documento del hijo está por purgarse o el hijo aún procesa la orden).
+            if (it.getBoolean("desvincular") == true) return@mapNotNull null
             val uid = it.getString("dispositivoHijo")
             val nombre = it.getString("nombreHijo") ?: "Hijo"
             if (uid != null) Pair(uid, nombre) else null
         }
+    }
+
+    /**
+     * 👂 Escucha en TIEMPO REAL los hijos vinculados de un padre.
+     *
+     * A diferencia de [obtenerHijosVinculados] (consulta puntual), este listener
+     * mantiene la UI sincronizada: si el padre desvincula/purga a un hijo desde
+     * Firestore, la lista se actualiza sola y los botones de monitoreo se
+     * deshabilitan en el acto cuando queda vacía (`.isEmpty()`).
+     *
+     * @param idPadre UID del padre dueño de las vinculaciones.
+     * @param onCambio Callback con la lista vigente (UID, nombre) de los hijos.
+     * @param onError Callback opcional de error de Firestore.
+     * @return [ListenerRegistration] para poder detener la escucha.
+     */
+    fun escucharHijosVinculados(
+        idPadre: String,
+        onCambio: (List<Pair<String, String>>) -> Unit,
+        onError: (Exception) -> Unit = {}
+    ): ListenerRegistration {
+        val subcoleccion = FirebaseFirestore.getInstance()
+            .collection("codigos_vinculacion")
+            .whereEqualTo("idPadre", idPadre)
+            .whereEqualTo("vinculado", true)
+
+        val registro = subcoleccion.addSnapshotListener { snapshot, error ->
+            if (error != null) {
+                Log.e(TAG, "❌ Error escuchando hijos vinculados: ${error.message}", error)
+                onError(error)
+                return@addSnapshotListener
+            }
+            // 🚩 Se excluyen las vinculaciones ya autorizadas para desvincular: la
+            // UI del padre debe reaccionar de inmediato aunque la purga del
+            // documento en Firestore sea diferida.
+            val hijos = snapshot?.documents?.mapNotNull { documento ->
+                if (documento.getBoolean("desvincular") == true) return@mapNotNull null
+                val uid = documento.getString("dispositivoHijo")
+                val nombre = documento.getString("nombreHijo") ?: "Hijo"
+                if (uid != null) Pair(uid, nombre) else null
+            } ?: emptyList()
+            Log.d(TAG, "👂 Hijos vinculados en tiempo real: ${hijos.size}")
+            onCambio(hijos)
+        }
+        return registro
     }
     suspend fun bloquearApp(uidHijo: String, paquete: String, bloquear: Boolean) {
         try {

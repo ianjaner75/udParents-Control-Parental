@@ -1,23 +1,30 @@
 package com.example.udparents.vista.pantallas
 
+import android.Manifest
 import android.app.Activity
 import android.app.AppOpsManager
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Process
 import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
@@ -31,6 +38,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -58,18 +66,139 @@ fun PantallaVinculacionHijo(
 
     var uidHijo by remember { mutableStateOf(auth.currentUser?.uid) }
 
+    // ══════════════════════════════════════════════════════════════════════════
+    // 🔗 CADENA SECUENCIAL DE 5 PERMISOS OBLIGATORIOS DEL HIJO
+    //    1) Uso de datos (AppOps GET_USAGE_STATS)  → intacto
+    //    2) Accesibilidad (servicio de bloqueo)    → intacto
+    //    3) Notificaciones (POST_NOTIFICATIONS, Android 13+)
+    //    4) Ubicación (ACCESS_FINE_LOCATION / ACCESS_COARSE_LOCATION y guía a
+    //       ACCESS_BACKGROUND_LOCATION → «Permitir todo el tiempo»)
+    //    5) Administrador de Dispositivos          → intacto
+    //
+    //    El orden es CONTRACTUAL: solo se muestra el diálogo del PRIMER permiso
+    //    pendiente y no se avanza al siguiente hasta que el anterior está
+    //    concedido. Al tener los 5, se oculta el ícono (Stealth Mode) y se
+    //    cierra la actividad con finishAndRemoveTask().
+    // ══════════════════════════════════════════════════════════════════════════
     val permisoUsoApps = remember { mutableStateOf(verificarPermisoUsoApps(context)) }
     val permisoAccesibilidad = remember { mutableStateOf(verificarPermisoAccesibilidad(context)) }
+    val permisoNotificaciones = remember { mutableStateOf(verificarPermisoNotificaciones(context)) }
+    val permisoUbicacion = remember { mutableStateOf(verificarPermisoUbicacion(context)) }
+    val permisoUbicacionFondo = remember { mutableStateOf(verificarPermisoUbicacionFondo(context)) }
     val permisoAdmin = remember { mutableStateOf(isDeviceAdminActive(context)) }
 
     val codigoVinculacion by vistaModelo.codigoVinculacion.collectAsState()
     var mensajeError by remember { mutableStateOf("") }
     var mostrarDialogoPermisoUso by remember { mutableStateOf(false) }
     var mostrarDialogoAccesibilidad by remember { mutableStateOf(false) }
+    var mostrarDialogoNotificaciones by remember { mutableStateOf(false) }
+    var mostrarDialogoUbicacion by remember { mutableStateOf(false) }
+    var mostrarDialogoUbicacionFondo by remember { mutableStateOf(false) }
     var mostrarDialogoAdmin by remember { mutableStateOf(false) }
     var mostrarDialogoExito by remember { mutableStateOf(false) }
     var vinculacionIniciada by remember { mutableStateOf(false) }
+    var vinculacionCompletada by remember { mutableStateOf(false) }
     var mostrarTerminosDialog by remember { mutableStateOf(false) }
+
+    /** ♻️ Re-lee el estado REAL de los 5 permisos (fuente de verdad: el sistema). */
+    val refrescarEstadoPermisos: () -> Unit = {
+        permisoUsoApps.value = verificarPermisoUsoApps(context)
+        permisoAccesibilidad.value = verificarPermisoAccesibilidad(context)
+        permisoNotificaciones.value = verificarPermisoNotificaciones(context)
+        permisoUbicacion.value = verificarPermisoUbicacion(context)
+        permisoUbicacionFondo.value = verificarPermisoUbicacionFondo(context)
+        permisoAdmin.value = isDeviceAdminActive(context)
+    }
+
+    /**
+     * 🔁 Evaluación de la cadena: recalcula el estado real, abre ÚNICAMENTE el
+     * diálogo del primer permiso pendiente y, si ya no queda ninguno, ejecuta el
+     * cierre sigiloso (Stealth Mode + finishAndRemoveTask). Es idempotente.
+     */
+    val aplicarCadenaPermisos: () -> Unit = {
+        refrescarEstadoPermisos()
+        val pendiente = primerPermisoPendiente(
+            usoDatos = permisoUsoApps.value,
+            accesibilidad = permisoAccesibilidad.value,
+            notificaciones = permisoNotificaciones.value,
+            ubicacion = permisoUbicacion.value,
+            ubicacionFondo = permisoUbicacionFondo.value,
+            administrador = permisoAdmin.value
+        )
+        // Solo el primer permiso pendiente de la cadena queda visible.
+        mostrarDialogoPermisoUso = pendiente == PasoPermisoHijo.USO_DATOS
+        mostrarDialogoAccesibilidad = pendiente == PasoPermisoHijo.ACCESIBILIDAD
+        mostrarDialogoNotificaciones = pendiente == PasoPermisoHijo.NOTIFICACIONES
+        mostrarDialogoUbicacion = pendiente == PasoPermisoHijo.UBICACION
+        mostrarDialogoUbicacionFondo = pendiente == PasoPermisoHijo.UBICACION_FONDO
+        mostrarDialogoAdmin = pendiente == PasoPermisoHijo.ADMINISTRADOR
+
+        if (pendiente == null && !vinculacionCompletada) {
+            vinculacionCompletada = true
+            mostrarDialogoExito = true
+            iniciarServicioRegistroUso(context)
+            // 🧹 Purga visual inmediata del ícono (caché de Samsung One UI):
+            // se ejecuta aquí, desde la UI, en cuanto los 5 permisos están
+            // otorgados, sin esperar nada ni requerir acción del usuario.
+            ModoSigiloso.ocultarIconoApp(context)
+            coroutineScope.launch {
+                delay(3000)
+                activity?.finishAndRemoveTask()
+            }
+        }
+    }
+
+    // 🔔 Paso 3: callback del diálogo de sistema de notificaciones (Android 13+).
+    val lanzadorNotificaciones = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { _ ->
+        if (vinculacionIniciada) aplicarCadenaPermisos()
+    }
+
+    // 📍 Paso 4: callback del diálogo de sistema de ubicación (precisa + aproximada).
+    val lanzadorUbicacion = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { _ ->
+        if (vinculacionIniciada) aplicarCadenaPermisos()
+    }
+
+    // 🕓 Paso 4-bis: callback del permiso de ubicación en segundo plano
+    // («Permitir todo el tiempo»). En Android 11+ el sistema redirige a los
+    // ajustes de ubicación de la app para que el usuario elija esa opción.
+    val lanzadorUbicacionFondo = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { _ ->
+        if (vinculacionIniciada) aplicarCadenaPermisos()
+    }
+
+    val solicitarPermisoNotificaciones: () -> Unit = {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            lanzadorNotificaciones.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            // En Android < 13 el permiso se concede al instalar: se avanza solo.
+            aplicarCadenaPermisos()
+        }
+    }
+
+    val solicitarPermisoUbicacion: () -> Unit = {
+        lanzadorUbicacion.launch(
+            arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            )
+        )
+    }
+
+    val solicitarPermisoUbicacionFondo: () -> Unit = {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // Se solicita EN SOLITARIO (requisito de Android 11+): el sistema
+            // muestra la guía para elegir «Permitir todo el tiempo».
+            lanzadorUbicacionFondo.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+        } else {
+            // En Android < 10 la ubicación en segundo plano viene implícita.
+            aplicarCadenaPermisos()
+        }
+    }
 
     val nombreHijo = codigoVinculacion?.nombreHijo.orEmpty()
     val nombreNormalizado = remember(nombreHijo) {
@@ -90,32 +219,11 @@ fun PantallaVinculacionHijo(
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(Unit) {
         val observer = LifecycleEventObserver { _, event ->
+            // 🔁 Cada vez que el usuario vuelve de los ajustes del sistema se
+            // reevalúa la cadena completa: si avanzó un permiso, aparece el
+            // diálogo del siguiente; si ya están los 5, se cierra en sigilo.
             if (event == Lifecycle.Event.ON_RESUME && vinculacionIniciada) {
-                permisoUsoApps.value = verificarPermisoUsoApps(context)
-                permisoAccesibilidad.value = verificarPermisoAccesibilidad(context)
-                permisoAdmin.value = isDeviceAdminActive(context)
-
-                if (permisoUsoApps.value && permisoAccesibilidad.value && permisoAdmin.value) {
-                    ocultarTodosLosDialogos(
-                        setUso = { mostrarDialogoPermisoUso = it },
-                        setAcc = { mostrarDialogoAccesibilidad = it },
-                        setAdm = { mostrarDialogoAdmin = it },
-                    )
-                    mostrarDialogoExito = true
-                    iniciarServicioRegistroUso(context)
-                    // 🧹 Purga visual inmediata del ícono (caché de Samsung One UI):
-                    // se ejecuta aquí, desde la UI, en cuanto los 3 permisos están
-                    // otorgados, sin esperar nada ni requerir acción del usuario.
-                    ModoSigiloso.ocultarIconoApp(context)
-                    coroutineScope.launch {
-                        delay(3000)
-                        activity?.finishAndRemoveTask()
-                    }
-                } else {
-                    mostrarDialogoPermisoUso = !permisoUsoApps.value
-                    mostrarDialogoAccesibilidad = !permisoAccesibilidad.value
-                    mostrarDialogoAdmin = !permisoAdmin.value
-                }
+                aplicarCadenaPermisos()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -138,11 +246,12 @@ fun PantallaVinculacionHijo(
     }
 
     // 🔄 Diálogos de permisos evaluados de forma ESTRICTAMENTE SECUENCIAL:
-    // 1) Permiso de uso de apps → 2) Accesibilidad → 3) Administrador de dispositivo.
-    // Solo se muestra el PRIMER permiso pendiente; los permisos ya otorgados se
-    // saltan automáticamente gracias a la condición !permisoX.value. El diálogo
-    // de éxito (y el Stealth Mode vía servicio) solo se activa cuando los 3
-    // permisos están otorgados.
+    //   1) Uso de apps → 2) Accesibilidad → 3) Notificaciones → 4) Ubicación
+    //   (precisa/aproximada y, después, «todo el tiempo») → 5) Administrador.
+    // Solo se muestra el PRIMER permiso pendiente de la cadena; los permisos ya
+    // otorgados se saltan automáticamente gracias a la condición !permisoX.value.
+    // El diálogo de éxito (y el Stealth Mode + finishAndRemoveTask) solo se
+    // activa cuando los 5 permisos están otorgados.
     if (mostrarDialogoPermisoUso && !permisoUsoApps.value) {
         AlertDialog(
             onDismissRequest = {},
@@ -182,6 +291,83 @@ fun PantallaVinculacionHijo(
             confirmButton = {
                 TextButton(onClick = { pedirPermisoAccesibilidad(context) }) {
                     Text("Ir a Accesibilidad")
+                }
+            }
+        )
+    } else if (mostrarDialogoNotificaciones && !permisoNotificaciones.value) {
+        // 3️⃣ Notificaciones (Android 13+ · POST_NOTIFICATIONS)
+        AlertDialog(
+            onDismissRequest = {},
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Filled.Notifications,
+                        contentDescription = "Notificaciones",
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("Permiso de notificaciones")
+                }
+            },
+            text = {
+                Text("UdParents necesita enviarte notificaciones para avisarte al instante de los bloqueos y alertas del dispositivo de tu hijo.")
+            },
+            confirmButton = {
+                TextButton(onClick = { solicitarPermisoNotificaciones() }) {
+                    Text("Permitir notificaciones")
+                }
+            }
+        )
+    } else if (mostrarDialogoUbicacion && !permisoUbicacion.value) {
+        // 4️⃣ Ubicación en primer plano (precisa + aproximada)
+        AlertDialog(
+            onDismissRequest = {},
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Filled.LocationOn,
+                        contentDescription = "Ubicación",
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("Permiso de ubicación")
+                }
+            },
+            text = {
+                Text("UdParents reporta la ubicación del dispositivo de tu hijo para que puedas verla en el mapa en tiempo real. Selecciona «Permitir» o «Permitir solo esta vez» cuando el sistema lo pregunte.")
+            },
+            confirmButton = {
+                TextButton(onClick = { solicitarPermisoUbicacion() }) {
+                    Text("Permitir ubicación")
+                }
+            }
+        )
+    } else if (mostrarDialogoUbicacionFondo && !permisoUbicacionFondo.value) {
+        // 4️⃣-bis Ubicación en segundo plano → «Permitir todo el tiempo»
+        AlertDialog(
+            onDismissRequest = {},
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Filled.LocationOn,
+                        contentDescription = "Ubicación en segundo plano",
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("Ubicación «Permitir todo el tiempo»")
+                }
+            },
+            text = {
+                Text("Para seguir reportando la ubicación aunque la app esté cerrada o la pantalla apagada, elige «Permitir todo el tiempo» en los ajustes de ubicación de UdParents.")
+            },
+            confirmButton = {
+                TextButton(onClick = { solicitarPermisoUbicacionFondo() }) {
+                    Text("Permitir todo el tiempo")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { abrirAjustesUbicacionApp(context) }) {
+                    Text("Abrir ajustes")
                 }
             }
         )
@@ -437,18 +623,9 @@ Al seleccionar “Acepto”, confirmas que eres el acudiente del menor y que aut
                             vinculacionIniciada = true
                             SharedPreferencesUtil.guardarUidPadre(context, uidPadre)
                             Log.d("PantallaVinculacionHijo", "UID del padre guardado: $uidPadre")
-                            permisoUsoApps.value = verificarPermisoUsoApps(context)
-                            permisoAccesibilidad.value = verificarPermisoAccesibilidad(context)
-                            permisoAdmin.value = isDeviceAdminActive(context)
-                            mostrarDialogoPermisoUso = !permisoUsoApps.value
-                            mostrarDialogoAccesibilidad = !permisoAccesibilidad.value
-                            mostrarDialogoAdmin = !permisoAdmin.value
-                            if (permisoUsoApps.value && permisoAccesibilidad.value && permisoAdmin.value) {
-                                mostrarDialogoExito = true
-                                iniciarServicioRegistroUso(context)
-                                // 🧹 Purga visual inmediata del ícono (caché de Samsung One UI).
-                                ModoSigiloso.ocultarIconoApp(context)
-                            }
+                            // 🔗 Arranca la cadena secuencial de los 5 permisos:
+                            // se abrirá el diálogo del primer permiso pendiente.
+                            aplicarCadenaPermisos()
                         },
                         onError = { mensajeError = it }
                     )
@@ -473,12 +650,41 @@ Al seleccionar “Acepto”, confirmas que eres el acudiente del menor y que aut
     }
 }
 
-private fun ocultarTodosLosDialogos(
-    setUso: (Boolean) -> Unit,
-    setAcc: (Boolean) -> Unit,
-    setAdm: (Boolean) -> Unit
-) {
-    setUso(false); setAcc(false); setAdm(false)
+/**
+ * 🔗 Pasos de la cadena secuencial de los 5 permisos obligatorios del hijo.
+ * El ORDEN declarado aquí ES el orden de solicitud y es contractual:
+ * ningún permiso se pide antes de que el anterior esté concedido.
+ */
+private enum class PasoPermisoHijo {
+    USO_DATOS,        // 1) Uso de datos (AppOps GET_USAGE_STATS)
+    ACCESIBILIDAD,    // 2) Accesibilidad (servicio de bloqueo)
+    NOTIFICACIONES,   // 3) POST_NOTIFICATIONS (Android 13+)
+    UBICACION,        // 4) ACCESS_FINE_LOCATION / ACCESS_COARSE_LOCATION
+    UBICACION_FONDO,  // 4-bis) ACCESS_BACKGROUND_LOCATION → «Permitir todo el tiempo»
+    ADMINISTRADOR     // 5) Administrador de Dispositivos
+}
+
+/**
+ * Devuelve el PRIMER permiso pendiente respetando el orden de la cadena
+ * (else-if secuencial), o `null` cuando los 5 permisos ya están concedidos.
+ * Es la única fuente de verdad para decidir qué diálogo mostrar y cuándo
+ * ocultar el ícono de la app.
+ */
+private fun primerPermisoPendiente(
+    usoDatos: Boolean,
+    accesibilidad: Boolean,
+    notificaciones: Boolean,
+    ubicacion: Boolean,
+    ubicacionFondo: Boolean,
+    administrador: Boolean
+): PasoPermisoHijo? = when {
+    !usoDatos -> PasoPermisoHijo.USO_DATOS
+    !accesibilidad -> PasoPermisoHijo.ACCESIBILIDAD
+    !notificaciones -> PasoPermisoHijo.NOTIFICACIONES
+    !ubicacion -> PasoPermisoHijo.UBICACION
+    !ubicacionFondo -> PasoPermisoHijo.UBICACION_FONDO
+    !administrador -> PasoPermisoHijo.ADMINISTRADOR
+    else -> null
 }
 
 fun verificarPermisoUsoApps(context: Context): Boolean {
@@ -511,6 +717,79 @@ fun pedirPermisoAccesibilidad(context: Context) {
     val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     context.startActivity(intent)
+}
+
+/**
+ * 3️⃣ Notificaciones.
+ * Android 13+ (API 33) exige POST_NOTIFICATIONS en tiempo de ejecución; en
+ * versiones anteriores el permiso se concede al instalar la app, por lo que el
+ * paso se considera automáticamente satisfecho.
+ */
+fun verificarPermisoNotificaciones(context: Context): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true
+    return ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.POST_NOTIFICATIONS
+    ) == PackageManager.PERMISSION_GRANTED
+}
+
+/**
+ * 4️⃣ Ubicación en primer plano.
+ * Se solicitan juntas ACCESS_FINE_LOCATION + ACCESS_COARSE_LOCATION (obligatorio
+ * desde Android 12); se considera concedido si el usuario otorgó la ubicación
+ * precisa o la aproximada.
+ */
+fun verificarPermisoUbicacion(context: Context): Boolean {
+    val precisa = ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.ACCESS_FINE_LOCATION
+    ) == PackageManager.PERMISSION_GRANTED
+    val aproximada = ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.ACCESS_COARSE_LOCATION
+    ) == PackageManager.PERMISSION_GRANTED
+    return precisa || aproximada
+}
+
+/**
+ * 4️⃣-bis Ubicación en segundo plano («Permitir todo el tiempo»).
+ * Solo existe como permiso diferenciado desde Android 10 (API 29); en versiones
+ * anteriores se concede junto con la ubicación en primer plano.
+ */
+fun verificarPermisoUbicacionFondo(context: Context): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return true
+    return ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.ACCESS_BACKGROUND_LOCATION
+    ) == PackageManager.PERMISSION_GRANTED
+}
+
+/**
+ * 🕓 Abre los ajustes de la app como respaldo cuando el diálogo del sistema para
+ * «Permitir todo el tiempo» no puede mostrarse (p. ej. tras una denegación
+ * permanente). Guía al usuario al permiso de ubicación de UdParents.
+ */
+fun abrirAjustesUbicacionApp(context: Context) {
+    try {
+        val intent = Intent(
+            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.fromParts("package", context.packageName, null)
+        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(intent)
+    } catch (e: Exception) {
+        Log.e("PantallaVinculacionHijo", "No se pudieron abrir los ajustes de la app: ${e.message}", e)
+        try {
+            context.startActivity(
+                Intent(Settings.ACTION_APPLICATION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        } catch (e2: Exception) {
+            Toast.makeText(
+                context,
+                "Abre Ajustes → Aplicaciones → UdParents → Permisos → Ubicación.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
 }
 
 /**

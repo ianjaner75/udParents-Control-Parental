@@ -239,11 +239,20 @@ class VistaModeloVinculacion(
     }
 
     /**
-     * 🚩 Autoriza la desvinculación remota de un hijo vinculado.
+     * 🚩 Autoriza la desvinculación remota de un hijo vinculado Y purga su
+     * documento en Firestore.
      *
-     * Activa la bandera `desvincular` en Firestore. El dispositivo del hijo la
-     * detecta en tiempo real a través de su servicio, restaura el ícono de la
-     * app, limpia su sesión local y remueve el Administrador de Dispositivos.
+     * 1. Activa la bandera `desvincular` en Firestore. El dispositivo del hijo la
+     *    detecta en tiempo real a través de su servicio, restaura el ícono de la
+     *    app, limpia su sesión local y remueve el Administrador de Dispositivos.
+     * 2. Además de la orden remota, se ejecuta el BORRADO EXPLÍCITO del documento
+     *    del hijo en Firestore (`.delete()`). El repositorio lo programa con un
+     *    pequeño tiempo de gracia para que el hijo alcance a leer la bandera
+     *    (la desvinculación remota queda intacta) y después limpia la base de
+     *    datos, incluso si el hijo está apagado, sin conexión o desinstalado.
+     *
+     * La lista local se actualiza al instante, por lo que la UI del padre reacciona
+     * en tiempo real (los botones de monitoreo se deshabilitan si queda vacía).
      *
      * @param uidPadre El UID del padre.
      * @param uidHijo El UID del hijo cuya desvinculación se autoriza.
@@ -253,10 +262,15 @@ class VistaModeloVinculacion(
             try {
                 repositorio.autorizarDesvinculacion(uidPadre, uidHijo) { exito ->
                     if (exito) {
-                        // Quitar de la lista localmente para reflejar el cambio en la UI.
+                        // Quitar de la lista localmente para reflejar el cambio en la UI
+                        // (deshabilita los botones de monitoreo cuando queda vacía).
                         _dispositivosVinculados.value =
                             _dispositivosVinculados.value.filter { it.dispositivoHijo != uidHijo }
-                        Log.d("VistaModeloVinculacion", "Desvinculación autorizada para el hijo con UID: $uidHijo")
+                        Log.d(
+                            "VistaModeloVinculacion",
+                            "🚩 Desvinculación autorizada para el hijo $uidHijo; " +
+                                    "purga explícita del documento programada en Firestore."
+                        )
                     } else {
                         Log.e("VistaModeloVinculacion", "Error al autorizar la desvinculación")
                     }
