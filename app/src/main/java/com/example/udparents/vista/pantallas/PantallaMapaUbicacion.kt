@@ -33,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -40,9 +41,11 @@ import com.example.udparents.modelo.UbicacionHijo
 import com.example.udparents.repositorio.RepositorioUbicacion
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.MapStyleOptions
 import com.google.maps.android.compose.Circle
 import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.MapProperties
+import com.google.maps.android.compose.MapType
 import com.google.maps.android.compose.MapUiSettings
 import com.google.maps.android.compose.Marker
 import com.google.maps.android.compose.MarkerState
@@ -67,6 +70,7 @@ fun PantallaMapaUbicacion(
     onVolver: () -> Unit
 ) {
     val repositorio = remember { RepositorioUbicacion() }
+    val context = LocalContext.current
     var ubicacion by remember { mutableStateOf<UbicacionHijo?>(null) }
     var primeraPosicion by remember { mutableStateOf(true) }
     val cameraPositionState = rememberCameraPositionState()
@@ -122,7 +126,11 @@ fun PantallaMapaUbicacion(
             GoogleMap(
                 modifier = Modifier.fillMaxSize(),
                 cameraPositionState = cameraPositionState,
-                properties = MapProperties(isMyLocationEnabled = false),
+                properties = MapProperties(
+                    isMyLocationEnabled = false,
+                    mapType = MapType.NORMAL,
+                    mapStyleOptions = MapStyleOptions.loadRawResourceStyle(context, com.example.udparents.R.raw.map_style)
+                ),
                 uiSettings = MapUiSettings(
                     zoomControlsEnabled = true,
                     compassEnabled = true,

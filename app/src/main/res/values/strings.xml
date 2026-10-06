@@ -5,5 +5,4 @@
     <string name="google_maps_api_key">PEGA_AQUI_TU_API_KEY_DE_GOOGLE_MAPS</string>
     <string name="accessibility_service_label">UdParents - Bloqueo de Apps</string>
     <string name="accessibility_service_description">Servicio que detecta y bloquea el acceso a aplicaciones no autorizadas por los padres.</string>
-|
 </resources>
