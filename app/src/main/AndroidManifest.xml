@@ -61,7 +61,22 @@
             android:name=".main.MainActivity"
             android:exported="true"
             android:label="@string/app_name"
-            android:theme="@style/Theme.UdParents" />
+            android:theme="@style/Theme.UdParents"
+            android:launchMode="singleTask">
+            <!-- 🔗 Deep Link: udparents://vincular?codigo=XXXXXX
+                 Permite que el QR escaneado por el hijo abra la app y
+                 rellene automáticamente el código de vinculación.
+                 Se usa singleTask para que onNewIntent() reciba los
+                 intents subsiguientes si la actividad ya está abierta. -->
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="udparents"
+                    android:host="vincular" />
+            </intent-filter>
+        </activity>
 
         <!-- 🕶️ Stealth Mode: el ícono del Launcher se gestiona a través de este
              activity-alias para poder habilitarlo/deshabilitarlo en caliente con

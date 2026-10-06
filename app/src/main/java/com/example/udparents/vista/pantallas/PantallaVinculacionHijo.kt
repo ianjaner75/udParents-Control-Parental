@@ -58,6 +58,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun PantallaVinculacionHijo(
     vistaModelo: VistaModeloVinculacion,
+    deepLinkCode: String? = null,
     onVolverAlPadre: () -> Unit
 ) {
     val context = LocalContext.current
@@ -225,6 +226,33 @@ fun PantallaVinculacionHijo(
     // ══════════════════════════════════════════════════════════════════════════
     var mostrarEscanerQr by remember { mutableStateOf(false) }
     var mensajeQr by remember { mutableStateOf("") }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 🔗 PROCESAMIENTO DE DEEP LINK
+    //    Cuando el QR escaneado por la cámara del hijo contiene el esquema
+    //    `udparents://vincular?codigo=XXXXXX`, Android abre la app y MainActivity
+    //    extrae el código, que llega aquí como parámetro [deepLinkCode].
+    //    Se auto-rellena el campo del código UNA SOLA VEZ para evitar que
+    //    navegaciones posteriores sobrescriban una entrada manual del usuario.
+    // ══════════════════════════════════════════════════════════════════════════
+    var deepLinkConsumido by remember { mutableStateOf(false) }
+    var deepLinkError by remember { mutableStateOf("") }
+
+    LaunchedEffect(deepLinkCode) {
+        val codigo = deepLinkCode
+        if (codigo != null && !deepLinkConsumido) {
+            deepLinkConsumido = true
+            // 🔒 Validación de seguridad: rechazar si el dispositivo ya está vinculado.
+            if (SharedPreferencesUtil.existeSesionHijo(context)) {
+                deepLinkError = "Este dispositivo ya está vinculado. No es posible vincularlo nuevamente."
+                Log.w("PantallaVinculacionHijo", "Deep Link rechazado: dispositivo ya vinculado.")
+            } else {
+                vistaModelo.actualizarCodigo(codigo)
+                mensajeQr = "✅ Código recibido por Deep Link: $codigo. Completa el perfil y pulsa «Vincular»."
+                Log.d("PantallaVinculacionHijo", "🔗 Deep Link procesado: código=$codigo")
+            }
+        }
+    }
 
     /** ✅ Valida el formulario con un código concreto (p. ej. el recién escaneado). */
     fun formularioValidoConCodigo(codigo: String): Boolean =
@@ -612,6 +640,23 @@ Al seleccionar “Acepto”, confirmas que eres el acudiente del menor y que aut
                         style = MaterialTheme.typography.bodySmall,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
+                }
+
+                // 🔗 Error de Deep Link: dispositivo ya vinculado.
+                if (deepLinkError.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3CD)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = deepLinkError,
+                            color = Color(0xFF8A6D3B),
+                            style = MaterialTheme.typography.bodySmall,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))

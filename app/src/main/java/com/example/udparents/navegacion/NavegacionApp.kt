@@ -48,9 +48,13 @@ fun Context.findActivity(): ComponentActivity? = when (this) {
 
 /**
  * Controlador de navegación que define las pantallas disponibles y su flujo.
+ *
+ * @param deepLinkCode Código de vinculación recibido vía Deep Link
+ *   (`udparents://vincular?codigo=...`). Se propaga a la pantalla del hijo
+ *   para pre-rellenar el campo del código automáticamente.
  */
 @Composable
-fun NavegacionApp() {
+fun NavegacionApp(deepLinkCode: String? = null) {
     val navController = rememberNavController()
     val activity = LocalContext.current.findActivity()
 
@@ -165,6 +169,7 @@ fun NavegacionApp() {
         composable(Rutas.VINCULACION_HIJO) {
             PantallaVinculacionHijo(
                 vistaModelo = viewModel(),
+                deepLinkCode = deepLinkCode,
                 onVolverAlPadre = {
                     navController.navigate(Rutas.BIENVENIDA) {
                         popUpTo(Rutas.VINCULACION_HIJO) { inclusive = true }
